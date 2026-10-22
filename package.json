@@ -2,15 +2,16 @@
   "name": "incidentiq",
   "private": true,
   "type": "module",
-  "version": "0.0.4",
+  "version": "0.1.0",
   "packageManager": "pnpm@11.6.0",
   "engines": {
     "node": ">=24"
   },
   "scripts": {
-    "build": "pnpm --filter @incidentiq/event-schema build && pnpm --filter @incidentiq/correlation build && pnpm --filter @incidentiq/cli build",
-    "test": "pnpm build && node --test packages/event-schema/dist/test/*.test.js packages/correlation/dist/test/*.test.js apps/cli/dist/test/*.test.js",
-    "incidentiq": "pnpm build && node apps/cli/dist/src/index.js"
+    "build": "pnpm --filter @incidentiq/event-schema build && pnpm --filter @incidentiq/correlation build && pnpm --filter @incidentiq/api build && pnpm --filter @incidentiq/cli build",
+    "test": "pnpm build && node --test packages/event-schema/dist/test/*.test.js packages/correlation/dist/test/*.test.js apps/api/dist/test/*.test.js apps/cli/dist/test/*.test.js",
+    "incidentiq": "pnpm build && node apps/cli/dist/src/index.js",
+    "api": "pnpm --filter @incidentiq/api start"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",
