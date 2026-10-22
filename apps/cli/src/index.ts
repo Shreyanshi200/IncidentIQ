@@ -3,9 +3,10 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { correlate } from "@incidentiq/correlation";
 import { SCHEMA_VERSION, type IncidentFixture, validateFixture } from "@incidentiq/event-schema";
-import { applyMigrations, createPool, listEvents, loadFixture } from "./database.js";
+import { applyMigrations, createPool, getIncident, listEvents, listIncidents, loadFixture, saveInvestigation } from "./database.js";
+import { formatIncidentList, formatInvestigation } from "./format.js";
 
-const [, , command, subcommand, file] = process.argv;
+const [command, subcommand, target, option, format] = process.argv.slice(2);
 
 async function withDatabase(action: (pool: ReturnType<typeof createPool>) => Promise<void>): Promise<void> {
   const pool = createPool();
@@ -26,23 +27,44 @@ async function readFixture(file: string): Promise<IncidentFixture> {
 
 try {
   if (command === "version") {
-    console.log(`incidentiq 0.0.3 (schema ${SCHEMA_VERSION})`);
+    console.log(`incidentiq 0.0.4 (schema ${SCHEMA_VERSION})`);
   } else if (command === "init") {
     await withDatabase(async () => console.log("PostgreSQL is ready and migrations are applied."));
-  } else if (command === "fixture" && subcommand === "validate" && file) {
-    console.log(`Valid fixture: ${(await readFixture(file)).fixture_id}`);
-  } else if (command === "fixture" && subcommand === "load" && file) {
-    const fixture = await readFixture(file);
+  } else if (command === "fixture" && subcommand === "validate" && target) {
+    console.log(`Valid fixture: ${(await readFixture(target)).fixture_id}`);
+  } else if (command === "fixture" && subcommand === "load" && target) {
+    const fixture = await readFixture(target);
     await withDatabase(async (pool) => {
       const loaded = await loadFixture(pool, fixture);
       console.log(`Loaded ${fixture.fixture_id}: ${loaded.inserted} inserted, ${loaded.duplicates} duplicate.`);
     });
   } else if (command === "correlate" && subcommand) {
-    console.log(JSON.stringify(correlate(await readFixture(subcommand)), null, 2));
+    const result = correlate(await readFixture(subcommand));
+    if (target === "--save") {
+      await withDatabase(async (pool) => {
+        await saveInvestigation(pool, result);
+      });
+      console.log(`Saved incident: ${result.fixture_id}\n`);
+    }
+    console.log(formatInvestigation(result));
   } else if (command === "events" && subcommand === "list") {
     await withDatabase(async (pool) => console.log(JSON.stringify(await listEvents(pool), null, 2)));
+  } else if (command === "incidents" && subcommand === "list") {
+    await withDatabase(async (pool) => console.log(formatIncidentList(await listIncidents(pool))));
+  } else if (command === "incidents" && subcommand === "explain" && target) {
+    await withDatabase(async (pool) => {
+      const incident = await getIncident(pool, target);
+      if (!incident) throw new Error(`Incident not found: ${target}`);
+      console.log(formatInvestigation(incident.investigation));
+    });
+  } else if (command === "incidents" && subcommand === "export" && target && option === "--format" && format === "json") {
+    await withDatabase(async (pool) => {
+      const incident = await getIncident(pool, target);
+      if (!incident) throw new Error(`Incident not found: ${target}`);
+      console.log(JSON.stringify(incident.investigation, null, 2));
+    });
   } else {
-    throw new Error("Usage: incidentiq version | init | fixture validate <file> | fixture load <file> | correlate <fixture> | events list");
+    throw new Error("Usage: incidentiq version | init | fixture validate <file> | fixture load <file> | correlate <fixture> [--save] | events list | incidents list | incidents explain <id> | incidents export <id> --format json");
   }
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error));

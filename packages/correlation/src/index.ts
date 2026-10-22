@@ -20,6 +20,7 @@ export interface CorrelationResult {
   leading_cause: Cause;
   confidence: "high" | "low";
   candidates: CandidateScore[];
+  next_checks: string[];
 }
 
 const EVENT_WINDOW_MS = 10 * 60 * 1000;
@@ -94,6 +95,21 @@ function downstreamCandidate(timeline: NormalizedEvent[]): CandidateScore {
   return candidate("downstream_timeout", factors);
 }
 
+function nextChecks(cause: Cause): string[] {
+  switch (cause) {
+    case "deployment_regression":
+      return ["Compare the deployed version with the previous database configuration.", "Validate a rollback or disable the changed connection-pool setting."];
+    case "resource_exhaustion":
+      return ["Inspect memory usage and limits for the affected workload.", "Review allocation patterns before increasing the memory limit."];
+    case "downstream_timeout":
+      return ["Check the downstream service latency and availability.", "Trace the failing dependency request before changing the upstream service."];
+    case "bad_release":
+      return ["Reproduce the failing route on the deployed version.", "Validate a rollback before releasing a corrected version."];
+    case "ambiguous":
+      return ["Compare deployment health with node and workload pressure.", "Collect more traces and resource events before choosing a remediation."];
+  }
+}
+
 export function correlate(fixture: IncidentFixture): CorrelationResult {
   const timeline = sortTimeline(fixture.events);
   const candidates = [
@@ -106,11 +122,13 @@ export function correlate(fixture: IncidentFixture): CorrelationResult {
   const second = candidates[1];
   const isAmbiguous = top.score < 5 || top.score - second.score < 3;
 
+  const leadingCause = isAmbiguous ? "ambiguous" : top.cause;
   return {
     fixture_id: fixture.fixture_id,
     timeline,
-    leading_cause: isAmbiguous ? "ambiguous" : top.cause,
+    leading_cause: leadingCause,
     confidence: isAmbiguous ? "low" : "high",
-    candidates
+    candidates,
+    next_checks: nextChecks(leadingCause)
   };
 }
