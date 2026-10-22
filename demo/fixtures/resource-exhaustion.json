@@ -1,0 +1,10 @@
+{
+  "fixture_id": "resource-exhaustion",
+  "scenario": "An order service memory leak is terminated by Kubernetes.",
+  "expected_cause": "resource_exhaustion",
+  "events": [
+    { "event_id": "unrelated-deploy-1", "occurred_at": "2026-10-09T14:00:00.000Z", "received_at": "2026-10-09T14:00:01.000Z", "tenant_id": "local", "environment": "local", "service": "catalog", "source": "github_actions", "event_type": "deployment", "severity": "info", "resource": "deployment/catalog", "attributes": { "state": "success" } },
+    { "event_id": "orders-oom-1", "occurred_at": "2026-10-09T14:05:00.000Z", "received_at": "2026-10-09T14:05:01.000Z", "tenant_id": "local", "environment": "local", "service": "orders", "source": "kubernetes", "event_type": "oom_killed", "severity": "critical", "resource": "pod/orders-2", "attributes": { "container": "orders" } },
+    { "event_id": "orders-error-1", "occurred_at": "2026-10-09T14:06:00.000Z", "received_at": "2026-10-09T14:06:01.000Z", "tenant_id": "local", "environment": "local", "service": "orders", "source": "node_sdk", "event_type": "exception", "severity": "error", "attributes": { "message": "upstream unavailable" } }
+  ]
+}

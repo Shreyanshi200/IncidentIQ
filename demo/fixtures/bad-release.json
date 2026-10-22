@@ -1,0 +1,9 @@
+{
+  "fixture_id": "bad-release",
+  "scenario": "A new checkout route fails immediately after release.",
+  "expected_cause": "bad_release",
+  "events": [
+    { "event_id": "deploy-checkout-1", "occurred_at": "2026-10-09T14:02:00.000Z", "received_at": "2026-10-09T14:02:01.000Z", "tenant_id": "local", "environment": "local", "service": "checkout", "source": "github_actions", "event_type": "deployment", "severity": "info", "version": "2.0.0", "resource": "deployment/checkout", "attributes": { "state": "success", "commit": "def456" } },
+    { "event_id": "checkout-route-error-1", "occurred_at": "2026-10-09T14:03:00.000Z", "received_at": "2026-10-09T14:03:01.000Z", "tenant_id": "local", "environment": "local", "service": "checkout", "source": "node_sdk", "event_type": "exception", "severity": "error", "version": "2.0.0", "trace_id": "trace-checkout", "attributes": { "route": "/checkout", "message": "TypeError" } }
+  ]
+}

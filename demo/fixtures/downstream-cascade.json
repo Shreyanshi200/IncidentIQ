@@ -1,0 +1,9 @@
+{
+  "fixture_id": "downstream-cascade",
+  "scenario": "Payment timeouts propagate into order service failures.",
+  "expected_cause": "downstream_timeout",
+  "events": [
+    { "event_id": "payments-timeout-1", "occurred_at": "2026-10-09T14:02:00.000Z", "received_at": "2026-10-09T14:02:01.000Z", "tenant_id": "local", "environment": "local", "service": "payments", "source": "node_sdk", "event_type": "exception", "severity": "error", "trace_id": "trace-1", "attributes": { "message": "gateway timeout" } },
+    { "event_id": "orders-timeout-1", "occurred_at": "2026-10-09T14:03:00.000Z", "received_at": "2026-10-09T14:03:01.000Z", "tenant_id": "local", "environment": "local", "service": "orders", "source": "node_sdk", "event_type": "exception", "severity": "error", "trace_id": "trace-1", "attributes": { "dependency": "payments" } }
+  ]
+}

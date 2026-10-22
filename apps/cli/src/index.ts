@@ -1,0 +1,50 @@
+#!/usr/bin/env node
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
+import { correlate } from "@incidentiq/correlation";
+import { SCHEMA_VERSION, type IncidentFixture, validateFixture } from "@incidentiq/event-schema";
+import { applyMigrations, createPool, listEvents, loadFixture } from "./database.js";
+
+const [, , command, subcommand, file] = process.argv;
+
+async function withDatabase(action: (pool: ReturnType<typeof createPool>) => Promise<void>): Promise<void> {
+  const pool = createPool();
+  try {
+    await applyMigrations(pool);
+    await action(pool);
+  } finally {
+    await pool.end();
+  }
+}
+
+async function readFixture(file: string): Promise<IncidentFixture> {
+  const fixture: unknown = JSON.parse(await readFile(resolve(file), "utf8"));
+  const result = validateFixture(fixture);
+  if (!result.valid) throw new Error(`Invalid fixture:\n- ${result.errors.join("\n- ")}`);
+  return fixture as IncidentFixture;
+}
+
+try {
+  if (command === "version") {
+    console.log(`incidentiq 0.0.3 (schema ${SCHEMA_VERSION})`);
+  } else if (command === "init") {
+    await withDatabase(async () => console.log("PostgreSQL is ready and migrations are applied."));
+  } else if (command === "fixture" && subcommand === "validate" && file) {
+    console.log(`Valid fixture: ${(await readFixture(file)).fixture_id}`);
+  } else if (command === "fixture" && subcommand === "load" && file) {
+    const fixture = await readFixture(file);
+    await withDatabase(async (pool) => {
+      const loaded = await loadFixture(pool, fixture);
+      console.log(`Loaded ${fixture.fixture_id}: ${loaded.inserted} inserted, ${loaded.duplicates} duplicate.`);
+    });
+  } else if (command === "correlate" && subcommand) {
+    console.log(JSON.stringify(correlate(await readFixture(subcommand)), null, 2));
+  } else if (command === "events" && subcommand === "list") {
+    await withDatabase(async (pool) => console.log(JSON.stringify(await listEvents(pool), null, 2)));
+  } else {
+    throw new Error("Usage: incidentiq version | init | fixture validate <file> | fixture load <file> | correlate <fixture> | events list");
+  }
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+}

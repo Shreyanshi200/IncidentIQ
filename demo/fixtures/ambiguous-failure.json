@@ -1,0 +1,9 @@
+{
+  "fixture_id": "ambiguous-failure",
+  "scenario": "A deployment and node pressure begin together without enough evidence to choose.",
+  "expected_cause": "ambiguous",
+  "events": [
+    { "event_id": "deploy-orders-ambiguous-1", "occurred_at": "2026-10-09T14:02:00.000Z", "received_at": "2026-10-09T14:02:01.000Z", "tenant_id": "local", "environment": "local", "service": "orders", "source": "github_actions", "event_type": "deployment", "severity": "info", "resource": "deployment/orders", "attributes": { "state": "success" } },
+    { "event_id": "orders-crash-loop-1", "occurred_at": "2026-10-09T14:02:00.000Z", "received_at": "2026-10-09T14:02:01.000Z", "tenant_id": "local", "environment": "local", "service": "orders", "source": "kubernetes", "event_type": "crash_loop_back_off", "severity": "critical", "resource": "pod/orders-3", "attributes": { "node_pressure": true } }
+  ]
+}
