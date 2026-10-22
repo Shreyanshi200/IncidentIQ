@@ -1,0 +1,8 @@
+.env
+.git
+.pnpm-store
+node_modules
+**/node_modules
+**/dist
+gha-creds-*.json
+IncidentIQ_PRD.pdf
