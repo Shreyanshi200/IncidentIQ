@@ -119,7 +119,7 @@ function createDeploymentEvent(context, now = new Date()) {
 
 
 function input(name) {
-    const value = process.env[`INPUT_${name.toUpperCase().replace(/-/g, "_")}`]?.trim();
+    const value = process.env[`INPUT_${name.toUpperCase().replace(/ /g, "_")}`]?.trim();
     if (!value)
         throw new Error(`${name} is required`);
     return value;

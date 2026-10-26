@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 import { createDeploymentEvent } from "../src/event.js";
 
 test("creates deployment context from GitHub Actions metadata", () => {
@@ -39,4 +41,15 @@ test("marks a failed deployment as an error", () => {
   const event = createDeploymentEvent({ tenantId: "acme", service: "orders", environment: "production", status: "failure" });
 
   assert.equal(event.severity, "error");
+});
+
+test("reads hyphenated GitHub Action inputs", () => {
+  const action = fileURLToPath(new URL("../src/index.js", import.meta.url));
+  const result = spawnSync(process.execPath, [action], {
+    encoding: "utf8",
+    env: { ...process.env, "INPUT_API-KEY": "iiq_test" }
+  });
+
+  assert.equal(result.status, 0);
+  assert.match(result.stderr, /api-url is required/);
 });
