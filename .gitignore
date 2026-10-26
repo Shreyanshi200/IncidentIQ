@@ -4,4 +4,10 @@ node_modules/
 coverage/
 .env
 dist/
+build/
+!integrations/
+!integrations/github-action/
+!integrations/github-action/dist/
+!integrations/github-action/dist/index.js
+!integrations/github-action/dist/package.json
 
