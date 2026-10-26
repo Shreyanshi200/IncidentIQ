@@ -1,0 +1,24 @@
+name: Test IncidentIQ Action
+
+on:
+  push:
+    branches:
+      - feat/github-actions-context
+
+permissions:
+  contents: read
+
+jobs:
+  deployment-context:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./integrations/github-action
+        with:
+          api-key: ${{ secrets.INCIDENTIQ_API_KEY }}
+          api-url: ${{ vars.INCIDENTIQ_API_URL }}
+          tenant-id: local
+          service: demo-service
+          environment: staging
+          deployment-status: success
