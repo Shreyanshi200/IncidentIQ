@@ -1,0 +1,14 @@
+{
+  "name": "@incidentiq/demo-service",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@incidentiq/event-schema": "workspace:*",
+    "@incidentiq/node-sdk": "workspace:*"
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "start": "node dist/src/index.js"
+  }
+}
