@@ -1,91 +1,75 @@
 # IncidentIQ
 
-Evidence-first production incident investigation, starting as a CLI and local demo.
+IncidentIQ stores operational evidence—application errors, deployments, and later infrastructure signals—so an investigator can build an explainable incident timeline.
 
-```text
-apps/cli/                       CLI commands and PostgreSQL access
-apps/api/                       Authenticated NestJS ingestion API
-apps/demo-service/              Runnable SDK integration example
-packages/event-schema/          Versioned shared contracts
-packages/correlation/           Deterministic, inspectable cause ranking
-packages/node-sdk/              Batched, fail-open Node.js telemetry client
-infrastructure/postgres/        Shared database migrations
-demo/fixtures/                  Repeatable incident scenarios
-```
+<p align="center">
+  <img src="assets/incidentiq-iq.png" alt="Abstract illustration of application, deployment, and infrastructure signals flowing into an IncidentIQ evidence graph" width="960">
+</p>
 
-## Version 0.2.0
+The current development version is **0.3.0**. It includes a self-hosted API backed by PostgreSQL, a local investigation CLI, a Node.js SDK implementation, and a GitHub Actions deployment-context Action.
 
-The project is TypeScript on Node.js. It validates versioned contracts, ingests authenticated event batches through NestJS and Kysely, stores normalized events in PostgreSQL, offers a safe Node.js SDK, and presents deterministic fixture investigations in a reviewer-friendly CLI.
+## What works today
+
+- Authenticated batch ingestion at `POST /v1/events/batch`
+- PostgreSQL event storage, secret-field redaction, and duplicate-event protection
+- A CLI to inspect stored events and deterministic fixture investigations
+- A fail-open Node.js SDK implementation for application events
+- A GitHub Action that records deployment context without failing a deployment
+
+Not yet included: Kubernetes collection, automatic incident detection, a published npm SDK package, or a web dashboard. The CLI is the current investigation interface.
+
+## Start here
+
+For a first local installation, follow [Getting started](docs/getting-started.md). It takes you from PostgreSQL to a running API, an ingestion key, a health check, and a stored event.
 
 ```sh
+git clone https://github.com/Shreyanshi200/IncidentIQ.git
+cd IncidentIQ
+corepack enable
+pnpm install --frozen-lockfile
 cp .env.example .env
 docker compose up -d postgres
-
-pnpm test
-pnpm incidentiq version
 pnpm incidentiq init
+pnpm incidentiq keys create --scope ingest
+pnpm api
+```
+
+The key command prints an `iiq_...` key once. Store it in a secret manager; do not commit it or put it in a workflow file.
+
+## Documentation
+
+| Guide | Use it for |
+| --- | --- |
+| [Getting started](docs/getting-started.md) | Self-hosting the API, creating an ingestion key, health checks, and viewing events |
+| [GitHub Actions integration](docs/integrations/github-actions.md) | Recording real deployment metadata from a GitHub workflow |
+| [Node.js SDK integration](docs/integrations/node-sdk.md) | Adding application error events and understanding the current SDK packaging status |
+| [Event data guide](docs/event-data.md) | Knowing which stored fields are generated, configured, or taken from a provider |
+
+## Verify the local installation
+
+In another terminal, after the API has started:
+
+```sh
+pnpm incidentiq api health
+pnpm incidentiq events list
+```
+
+`events list` displays newest events first. It connects directly to PostgreSQL, so it works even if the API process is stopped.
+
+## Development commands
+
+```sh
+pnpm test
 pnpm incidentiq fixture validate demo/fixtures/deployment-regression.json
 pnpm incidentiq fixture load demo/fixtures/deployment-regression.json
-pnpm incidentiq events list
 pnpm incidentiq correlate demo/fixtures/deployment-regression.json
 pnpm incidentiq correlate demo/fixtures/deployment-regression.json --save
 pnpm incidentiq incidents list
 pnpm incidentiq incidents explain deployment-regression
 pnpm incidentiq incidents export deployment-regression --format json
-pnpm incidentiq keys create --scope ingest
-pnpm incidentiq api start
 ```
 
-`fixture load` is idempotent: loading the same fixture twice never duplicates source events. `correlate` returns plain-text timeline, ranked causes, score factors, and next checks. Add `--save` to persist an investigation for listing, explanation, or JSON export.
-
-### Node.js SDK
-
-The SDK batches up to 100 normalized events and never throws when the ingestion API is unavailable. It retains up to 1,000 events in memory and drops the oldest when full.
-
-```ts
-import { createIncidentIQ } from "@incidentiq/node-sdk";
-
-const incidentiq = createIncidentIQ({ apiKey: process.env.INCIDENTIQ_API_KEY! });
-incidentiq.track({
-  event_id: crypto.randomUUID(),
-  occurred_at: new Date().toISOString(),
-  received_at: new Date().toISOString(),
-  tenant_id: "local",
-  environment: "production",
-  service: "orders",
-  source: "node_sdk",
-  event_type: "exception",
-  severity: "error",
-  attributes: { message: "database timeout" }
-});
-
-await incidentiq.shutdown();
-```
-
-### Run the SDK demo service
-
-Start PostgreSQL and the API in separate terminals, then create an ingestion key and start the demo service:
-
-```sh
-docker compose up -d postgres
-pnpm incidentiq init
-pnpm incidentiq keys create --scope ingest
-
-# Terminal 1
-pnpm incidentiq api start
-
-# Terminal 2: replace the value with the key shown once above
-INCIDENTIQ_API_KEY=iiq_your_key pnpm demo-service
-```
-
-Trigger its simulated failure and inspect the stored SDK event after a couple of seconds:
-
-```sh
-curl -i "http://localhost:4000/orders?fail=true"
-pnpm incidentiq events list
-```
-
-The service returns its own `503` response whether IncidentIQ is reachable or not; the SDK only observes and exports the failure.
+`fixture load` is idempotent: loading the same fixture twice never duplicates its source events. `correlate` returns an evidence timeline, ranked causes, score factors, and suggested next checks.
 
 ## Release roadmap
 
@@ -96,21 +80,24 @@ The service returns its own `503` response whether IncidentIQ is reachable or no
 | 0.0.3 | Complete | Deterministic cause ranking |
 | 0.0.4 | Complete | Readable local investigation CLI |
 | 0.1.0 | Complete | Authenticated event-ingestion API |
-| 0.2.0 | Complete | Safe Node.js SDK with batched, fail-open export |
-| 0.3.0 | Planned | GitHub Actions deployment context |
+| 0.2.0 | Complete | Safe Node.js SDK implementation with batched, fail-open export |
+| 0.3.0 | Complete | GitHub Actions deployment context |
 | 0.4.0 | Planned | Read-only Kubernetes workload signals |
 | 0.5.0 | Planned | Automatic incident detection and unified timeline |
 | 0.6.0 | Planned | Evidence-bounded AI explanation |
 | 0.8.0 | Planned | Reliability, retention, quotas, and cost controls |
-| 0.9.0-1.0.0 | Planned | ClickHouse, Kafka, portfolio hardening, and stable MVP |
+| 0.9.0–1.0.0 | Planned | ClickHouse, Kafka, portfolio hardening, and stable MVP |
 
 ## CI and image releases
 
-GitHub Actions runs the complete PostgreSQL-backed test suite for pull requests, pushes to `main`, and version tags. Pushing a tag such as `v0.2.0` also publishes `ghcr.io/<owner>/incidentiq-api:v0.2.0` and `latest` to GitHub Container Registry.
+GitHub Actions runs the PostgreSQL-backed test suite for pull requests and pushes to `main`. After a successful `main` CI run, the separate **Publish API image** workflow publishes `ghcr.io/<owner>/incidentiq-api:latest` and an immutable `sha-<commit SHA>` image to GitHub Container Registry.
 
-No registry credential needs to be created: the release job uses GitHub's built-in token with `packages: write` permission. Create and push a version tag after the feature is merged:
+Protect `main` in GitHub so changes reach it through reviewed pull requests; that makes each image publish correspond to a merged change. Deploy `sha-<commit SHA>` when you need an immutable image, and reserve `latest` for development or a moving mainline environment.
+
+To deploy the image built for a particular merge:
 
 ```sh
-git tag v0.2.0
-git push origin v0.2.0
+docker pull ghcr.io/<owner>/incidentiq-api:sha-<commit-sha>
 ```
+
+The registry image runs the API. In the current version, use a source checkout and the CLI to create ingestion keys and inspect events.

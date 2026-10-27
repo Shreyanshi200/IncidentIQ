@@ -1,0 +1,13 @@
+{
+  "name": "@incidentiq/github-action",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@incidentiq/event-schema": "workspace:*",
+    "@incidentiq/node-sdk": "workspace:*"
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.json && ncc build build/src/index.js -o dist"
+  }
+}

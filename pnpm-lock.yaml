@@ -14,6 +14,9 @@ importers:
       '@types/pg':
         specifier: ^8.15.6
         version: 8.23.1
+      '@vercel/ncc':
+        specifier: ^0.45.0
+        version: 0.45.0
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -61,6 +64,15 @@ importers:
         version: 8.23.1
 
   apps/demo-service:
+    dependencies:
+      '@incidentiq/event-schema':
+        specifier: workspace:*
+        version: link:../../packages/event-schema
+      '@incidentiq/node-sdk':
+        specifier: workspace:*
+        version: link:../../packages/node-sdk
+
+  integrations/github-action:
     dependencies:
       '@incidentiq/event-schema':
         specifier: workspace:*
@@ -141,6 +153,10 @@ packages:
 
   '@types/pg@8.23.1':
     resolution: {integrity: sha512-fKVHpikPdg4GKks3JuLEhvwSyvwzF23hnabPy6DD8ljVbC7+6J5dQzdv4arV6jqq57djnMgs1HKBxX4P8aBI3A==}
+
+  '@vercel/ncc@0.45.0':
+    resolution: {integrity: sha512-8zPi1yO2mHpoKTD+e+Bf0ZT3e+sWHSOyGapm9s7b5R0gxJi3CiFTqmeQiMEyu6ejrz2s09M8JkEoUaTWjBJPQQ==}
+    hasBin: true
 
   accepts@2.0.0:
     resolution: {integrity: sha512-5cvg6CtKwfgdmVqY1WIiXKc3Q1bkRqGLi+2W/6ao+6Y7gu/RCwRuAhGEzh5B4KlszSuTLgZYuqFqo5bImjNKng==}
@@ -613,6 +629,8 @@ snapshots:
       '@types/node': 24.19.2
       pg-protocol: 1.16.1
       pg-types: 2.2.0
+
+  '@vercel/ncc@0.45.0': {}
 
   accepts@2.0.0:
     dependencies:

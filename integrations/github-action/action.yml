@@ -1,0 +1,25 @@
+name: IncidentIQ deployment context
+description: Record GitHub Actions deployment evidence without affecting the deployment outcome.
+inputs:
+  api-key:
+    description: IncidentIQ ingestion API key.
+    required: true
+  api-url:
+    description: Base URL for the IncidentIQ API.
+    required: true
+  tenant-id:
+    description: IncidentIQ tenant ID associated with the API key.
+    required: true
+  service:
+    description: Application service being deployed.
+    required: true
+  environment:
+    description: Deployment environment, for example production.
+    required: true
+  deployment-status:
+    description: Deployment outcome.
+    required: false
+    default: success
+runs:
+  using: node24
+  main: dist/index.js

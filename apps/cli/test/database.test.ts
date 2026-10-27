@@ -17,7 +17,13 @@ test("migrations and fixture loads are idempotent", { skip: !databaseUrl }, asyn
     await applyMigrations(database);
     assert.deepEqual(await loadFixture(database, uniqueFixture), { inserted: uniqueFixture.events.length, duplicates: 0 });
     assert.deepEqual(await loadFixture(database, uniqueFixture), { inserted: 0, duplicates: uniqueFixture.events.length });
-    assert.equal((await listEvents(database)).filter((event) => event.event_id.endsWith(suffix)).length, uniqueFixture.events.length);
+    const loadedEvents = (await listEvents(database)).filter((event) => event.event_id.endsWith(suffix));
+    assert.equal(loadedEvents.length, uniqueFixture.events.length);
+    assert.deepEqual(loadedEvents.map((event) => event.event_id), [
+      `orders-restart-1-${suffix}`,
+      `orders-db-error-1-${suffix}`,
+      `deploy-orders-1-${suffix}`
+    ]);
     await saveInvestigation(database, correlate({ ...uniqueFixture, fixture_id: `incident-${suffix}` }));
     assert.equal((await listIncidents(database)).some((incident) => incident.incident_id === `incident-${suffix}`), true);
     assert.equal((await getIncident(database, `incident-${suffix}`))?.investigation.leading_cause, "deployment_regression");
