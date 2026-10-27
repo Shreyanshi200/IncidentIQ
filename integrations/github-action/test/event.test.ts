@@ -1,8 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { fileURLToPath } from "node:url";
-import { spawnSync } from "node:child_process";
 import { createDeploymentEvent } from "../src/event.js";
+import { run } from "../src/run.js";
 
 test("creates deployment context from GitHub Actions metadata", () => {
   const event = createDeploymentEvent({
@@ -43,13 +42,60 @@ test("marks a failed deployment as an error", () => {
   assert.equal(event.severity, "error");
 });
 
-test("reads hyphenated GitHub Action inputs", () => {
-  const action = fileURLToPath(new URL("../src/index.js", import.meta.url));
-  const result = spawnSync(process.execPath, [action], {
-    encoding: "utf8",
-    env: { ...process.env, "INPUT_API-KEY": "iiq_test" }
-  });
+test("reports an accepted deployment context", async () => {
+  const originalFetch = globalThis.fetch;
+  const values = {
+    "INPUT_API-KEY": "iiq_test",
+    "INPUT_API-URL": "http://incidentiq.test",
+    "INPUT_TENANT-ID": "local",
+    "INPUT_SERVICE": "orders",
+    "INPUT_ENVIRONMENT": "production"
+  };
+  const previous = new Map(Object.keys(values).map((key) => [key, process.env[key]]));
+  Object.assign(process.env, values);
+  globalThis.fetch = async () => new Response(null, { status: 202 });
+  const logs: string[] = [];
+  const warnings: string[] = [];
 
-  assert.equal(result.status, 0);
-  assert.match(result.stderr, /api-url is required/);
+  try {
+    await run((message) => logs.push(message), (message) => warnings.push(message));
+  } finally {
+    globalThis.fetch = originalFetch;
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+
+  assert.deepEqual(logs, ["IncidentIQ recorded deployment context for orders"]);
+  assert.deepEqual(warnings, []);
+});
+
+test("warns when the API rejects a deployment context", async () => {
+  const originalFetch = globalThis.fetch;
+  const values = {
+    "INPUT_API-KEY": "iiq_test",
+    "INPUT_API-URL": "http://incidentiq.test",
+    "INPUT_TENANT-ID": "local",
+    "INPUT_SERVICE": "orders",
+    "INPUT_ENVIRONMENT": "production"
+  };
+  const previous = new Map(Object.keys(values).map((key) => [key, process.env[key]]));
+  Object.assign(process.env, values);
+  globalThis.fetch = async () => new Response(null, { status: 401 });
+  const logs: string[] = [];
+  const warnings: string[] = [];
+
+  try {
+    await run((message) => logs.push(message), (message) => warnings.push(message));
+  } finally {
+    globalThis.fetch = originalFetch;
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+
+  assert.deepEqual(logs, []);
+  assert.deepEqual(warnings, ["IncidentIQ deployment context was not exported: the API did not accept the event"]);
 });

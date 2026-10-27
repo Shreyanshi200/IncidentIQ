@@ -31,8 +31,8 @@ test("batches events with the ingestion API authorization", async () => {
 
   client.track(event("one"));
   client.track(event("two"));
-  await client.flush();
-  await client.shutdown();
+  assert.equal(await client.flush(), true);
+  assert.equal(await client.shutdown(), true);
 
   assert.deepEqual(requests, [{ url: "http://incidentiq.test/v1/events/batch", authorization: "Bearer iiq_test", events: ["one", "two"] }]);
 });
@@ -50,7 +50,7 @@ test("flushes a partial batch after the configured interval", async () => {
 
   client.track(event("delayed"));
   await new Promise((resolve) => setTimeout(resolve, 20));
-  await client.shutdown();
+  assert.equal(await client.shutdown(), true);
 
   assert.equal(sent, 1);
 });
@@ -68,9 +68,9 @@ test("fails open and retries queued events on the next flush", async () => {
   });
 
   client.track(event("retry"));
-  await client.flush();
-  await client.flush();
-  await client.shutdown();
+  assert.equal(await client.flush(), false);
+  assert.equal(await client.flush(), true);
+  assert.equal(await client.shutdown(), true);
 
   assert.equal(attempts, 2);
 });
@@ -92,8 +92,8 @@ test("bounds the in-memory queue while the API is unavailable", async () => {
   client.track(event("one"));
   client.track(event("two"));
   client.track(event("three"));
-  await client.flush();
-  await client.shutdown();
+  assert.equal(await client.flush(), true);
+  assert.equal(await client.shutdown(), true);
 
   assert.deepEqual(sent, [["two", "three"]]);
 });

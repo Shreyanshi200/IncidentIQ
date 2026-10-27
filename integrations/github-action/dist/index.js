@@ -36,7 +36,7 @@ function createIncidentIQ(options) {
         if (inFlight)
             return inFlight;
         if (queue.length === 0)
-            return;
+            return true;
         const batch = queue.splice(0, batchSize);
         inFlight = (async () => {
             try {
@@ -47,11 +47,13 @@ function createIncidentIQ(options) {
                 });
                 if (!response.ok)
                     throw new Error(`IncidentIQ ingestion failed: ${response.status}`);
+                return true;
             }
             catch {
                 queue.unshift(...batch);
                 if (queue.length > maxQueueSize)
                     queue.length = maxQueueSize;
+                return false;
             }
             finally {
                 inFlight = undefined;
@@ -78,7 +80,7 @@ function createIncidentIQ(options) {
             if (timer)
                 clearTimeout(timer);
             timer = undefined;
-            await flush();
+            return flush();
         }
     };
 }
@@ -115,7 +117,7 @@ function createDeploymentEvent(context, now = new Date()) {
     };
 }
 
-;// CONCATENATED MODULE: ./build/src/index.js
+;// CONCATENATED MODULE: ./build/src/run.js
 
 
 function input(name) {
@@ -124,7 +126,7 @@ function input(name) {
         throw new Error(`${name} is required`);
     return value;
 }
-async function run() {
+async function run(log = console.log, warn = console.warn) {
     try {
         const client = createIncidentIQ({ apiKey: input("api-key"), apiUrl: input("api-url") });
         const event = createDeploymentEvent({
@@ -142,12 +144,17 @@ async function run() {
             actor: process.env.GITHUB_ACTOR
         });
         client.track(event);
-        await client.shutdown();
-        console.log(`IncidentIQ recorded deployment context for ${event.service}`);
+        if (await client.shutdown())
+            log(`IncidentIQ recorded deployment context for ${event.service}`);
+        else
+            warn("IncidentIQ deployment context was not exported: the API did not accept the event");
     }
     catch (error) {
-        console.warn(`IncidentIQ deployment context was not exported: ${error instanceof Error ? error.message : String(error)}`);
+        warn(`IncidentIQ deployment context was not exported: ${error instanceof Error ? error.message : String(error)}`);
     }
 }
+
+;// CONCATENATED MODULE: ./build/src/index.js
+
 void run();
 

@@ -122,7 +122,7 @@ export async function loadFixture(db: Kysely<Database>, fixture: IncidentFixture
 }
 
 export async function listEvents(db: Kysely<Database>): Promise<StoredEvent[]> {
-  const events = await db.selectFrom("source_events").selectAll().orderBy("occurred_at").orderBy("event_id").execute();
+  const events = await db.selectFrom("source_events").selectAll().orderBy("occurred_at", "desc").orderBy("event_id", "desc").execute();
   return events.map(({ version, trace_id, resource, ...event }) => ({
     ...event,
     ...(version === null ? {} : { version }),

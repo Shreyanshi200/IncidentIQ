@@ -11,8 +11,8 @@ export interface IncidentIQOptions {
 
 export interface IncidentIQClient {
   track(event: NormalizedEvent): void;
-  flush(): Promise<void>;
-  shutdown(): Promise<void>;
+  flush(): Promise<boolean>;
+  shutdown(): Promise<boolean>;
 }
 
 const DEFAULT_BATCH_SIZE = 100;
@@ -35,7 +35,7 @@ export function createIncidentIQ(options: IncidentIQOptions): IncidentIQClient {
   const endpoint = `${(options.apiUrl ?? "http://localhost:3000").replace(/\/$/, "")}/v1/events/batch`;
   const queue: NormalizedEvent[] = [];
   let timer: ReturnType<typeof setTimeout> | undefined;
-  let inFlight: Promise<void> | undefined;
+  let inFlight: Promise<boolean> | undefined;
 
   function schedule(): void {
     if (timer || queue.length === 0) return;
@@ -46,9 +46,9 @@ export function createIncidentIQ(options: IncidentIQOptions): IncidentIQClient {
     timer.unref?.();
   }
 
-  async function flush(): Promise<void> {
+  async function flush(): Promise<boolean> {
     if (inFlight) return inFlight;
-    if (queue.length === 0) return;
+    if (queue.length === 0) return true;
 
     const batch = queue.splice(0, batchSize);
     inFlight = (async () => {
@@ -59,9 +59,11 @@ export function createIncidentIQ(options: IncidentIQOptions): IncidentIQClient {
           body: JSON.stringify({ events: batch })
         });
         if (!response.ok) throw new Error(`IncidentIQ ingestion failed: ${response.status}`);
+        return true;
       } catch {
         queue.unshift(...batch);
         if (queue.length > maxQueueSize) queue.length = maxQueueSize;
+        return false;
       } finally {
         inFlight = undefined;
         if (queue.length >= batchSize) void flush();
@@ -79,10 +81,10 @@ export function createIncidentIQ(options: IncidentIQOptions): IncidentIQClient {
       else schedule();
     },
     flush,
-    async shutdown(): Promise<void> {
+    async shutdown(): Promise<boolean> {
       if (timer) clearTimeout(timer);
       timer = undefined;
-      await flush();
+      return flush();
     }
   };
 }
