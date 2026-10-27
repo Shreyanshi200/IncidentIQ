@@ -2,6 +2,10 @@
 
 IncidentIQ stores operational evidence—application errors, deployments, and later infrastructure signals—so an investigator can build an explainable incident timeline.
 
+<p align="center">
+  <img src="assets/incidentiq-iq.png" alt="Abstract illustration of application, deployment, and infrastructure signals flowing into an IncidentIQ evidence graph" width="960">
+</p>
+
 The current development version is **0.3.0**. It includes a self-hosted API backed by PostgreSQL, a local investigation CLI, a Node.js SDK implementation, and a GitHub Actions deployment-context Action.
 
 ## What works today
