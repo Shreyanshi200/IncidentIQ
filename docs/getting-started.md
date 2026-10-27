@@ -75,4 +75,4 @@ Choose an integration:
 
 The API needs a PostgreSQL database and must be reachable over HTTPS by remote producers such as GitHub-hosted runners. The GitHub Action guide explains the required CI secret and URL.
 
-The API image is published to GitHub Container Registry after a change reaches `main`. Each publish creates a moving `latest` tag and an immutable `sha-<commit SHA>` tag. It runs the API process only. Key provisioning and event inspection currently use the repository CLI; an operator therefore needs a source checkout with the same database connection string.
+The API image is published to GitHub Container Registry after CI succeeds for a change on `main`. Each publish creates a moving `latest` tag and an immutable `sha-<commit SHA>` tag. It runs the API process only. Key provisioning and event inspection currently use the repository CLI; an operator therefore needs a source checkout with the same database connection string.

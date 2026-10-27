@@ -90,7 +90,7 @@ pnpm incidentiq incidents export deployment-regression --format json
 
 ## CI and image releases
 
-GitHub Actions runs the PostgreSQL-backed test suite for pull requests and pushes to `main`. A push to `main` publishes `ghcr.io/<owner>/incidentiq-api:latest` and an immutable `sha-<commit SHA>` image to GitHub Container Registry.
+GitHub Actions runs the PostgreSQL-backed test suite for pull requests and pushes to `main`. After a successful `main` CI run, the separate **Publish API image** workflow publishes `ghcr.io/<owner>/incidentiq-api:latest` and an immutable `sha-<commit SHA>` image to GitHub Container Registry.
 
 Protect `main` in GitHub so changes reach it through reviewed pull requests; that makes each image publish correspond to a merged change. Deploy `sha-<commit SHA>` when you need an immutable image, and reserve `latest` for development or a moving mainline environment.
 
