@@ -47,6 +47,58 @@ The Action needs a checkout only when you run the local copy inside this reposit
     deployment-status: success
 ```
 
+## Production deployment pattern
+
+The `feat/github-actions-context` branch was only a one-time smoke test. A typical production flow is:
+
+```text
+feature branch → pull request checks → merge to main → deploy staging
+release tag vX.Y.Z → approval → deploy production
+```
+
+The IncidentIQ Action is cloud-provider agnostic. GitHub Actions can deploy an Azure App Service, Azure Container App, AKS workload, AWS service, Google Cloud service, DigitalOcean service, or self-hosted target. The provider-specific deployment step performs the deployment; the IncidentIQ Action runs after it and records the result. Keep the IncidentIQ step in the same job and run it even when deployment fails:
+
+```yaml
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy-staging:
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      # Authenticate to Azure and deploy your application here.
+      - name: Deploy to Azure
+        run: ./scripts/deploy-azure.sh staging
+
+      - name: Record deployment context
+        if: always()
+        uses: Shreyanshi200/IncidentIQ/integrations/github-action@<full-commit-sha>
+        with:
+          api-key: ${{ secrets.INCIDENTIQ_API_KEY }}
+          api-url: ${{ vars.INCIDENTIQ_API_URL }}
+          tenant-id: local
+          service: orders
+          environment: staging
+          deployment-status: ${{ job.status }}
+```
+
+Use a separate production workflow triggered by release tags and protected with a GitHub Environment approval. Prefer Azure OpenID Connect credentials over a long-lived Azure password or client secret.
+
+### What a production team needs
+
+- A stable IncidentIQ API HTTPS URL, rather than a temporary tunnel.
+- PostgreSQL for the IncidentIQ API.
+- An ingestion key stored as a GitHub Actions secret and an API URL stored as a variable; environment-scoped secrets are preferable for production.
+- A matching `tenant-id`, `service`, and `environment` in the workflow.
+- A pinned IncidentIQ Action commit SHA or released tag.
+- Network access from the GitHub runner to both Azure and the IncidentIQ API. If either service is private, use an appropriately networked self-hosted runner or private connectivity.
+
+IncidentIQ observes the Azure deployment; it does not replace the Azure deployment action or manage Azure credentials.
+
 ## Inputs
 
 | Input | Required | Meaning |

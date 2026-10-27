@@ -4,7 +4,6 @@ on:
   pull_request:
   push:
     branches: [main]
-    tags: ["v*"]
 
 permissions:
   contents: read
@@ -43,7 +42,7 @@ jobs:
 
   publish-api-image:
     needs: test
-    if: github.ref_type == 'tag'
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -63,5 +62,5 @@ jobs:
           file: apps/api/Dockerfile
           push: true
           tags: |
-            ${{ steps.image.outputs.name }}:${{ github.ref_name }}
+            ${{ steps.image.outputs.name }}:sha-${{ github.sha }}
             ${{ steps.image.outputs.name }}:latest
