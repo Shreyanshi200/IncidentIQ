@@ -1,4 +1,4 @@
-name: Publish API image
+name: Publish images
 
 on:
   workflow_run:
@@ -11,7 +11,7 @@ permissions:
   packages: write
 
 jobs:
-  publish:
+  publish-api:
     if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
@@ -29,6 +29,29 @@ jobs:
         with:
           context: .
           file: apps/api/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.image.outputs.name }}:sha-${{ github.event.workflow_run.head_sha }}
+            ${{ steps.image.outputs.name }}:latest
+
+  publish-kubernetes-collector:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - id: image
+        run: echo "name=ghcr.io/$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')/incidentiq-kubernetes-collector" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: integrations/kubernetes-collector/Dockerfile
           push: true
           tags: |
             ${{ steps.image.outputs.name }}:sha-${{ github.event.workflow_run.head_sha }}

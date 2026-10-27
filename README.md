@@ -6,7 +6,7 @@ IncidentIQ stores operational evidence—application errors, deployments, and la
   <img src="assets/incidentiq-iq.png" alt="Abstract illustration of application, deployment, and infrastructure signals flowing into an IncidentIQ evidence graph" width="960">
 </p>
 
-The current development version is **0.3.0**. It includes a self-hosted API backed by PostgreSQL, a local investigation CLI, a Node.js SDK implementation, and a GitHub Actions deployment-context Action.
+The current development version is **0.4.0**. It includes a self-hosted API backed by PostgreSQL, a local investigation CLI, a Node.js SDK implementation, a GitHub Actions deployment-context Action, and a read-only Kubernetes workload collector.
 
 ## What works today
 
@@ -15,8 +15,9 @@ The current development version is **0.3.0**. It includes a self-hosted API back
 - A CLI to inspect stored events and deterministic fixture investigations
 - A fail-open Node.js SDK implementation for application events
 - A GitHub Action that records deployment context without failing a deployment
+- A namespace-scoped Kubernetes collector for read-only workload-failure evidence
 
-Not yet included: Kubernetes collection, automatic incident detection, a published npm SDK package, or a web dashboard. The CLI is the current investigation interface.
+Not yet included: cluster-wide Kubernetes collection, automatic incident detection, a published npm SDK package, or a web dashboard. The CLI is the current investigation interface.
 
 ## Start here
 
@@ -43,6 +44,7 @@ The key command prints an `iiq_...` key once. Store it in a secret manager; do n
 | [Getting started](docs/getting-started.md) | Self-hosting the API, creating an ingestion key, health checks, and viewing events |
 | [GitHub Actions integration](docs/integrations/github-actions.md) | Recording real deployment metadata from a GitHub workflow |
 | [Node.js SDK integration](docs/integrations/node-sdk.md) | Adding application error events and understanding the current SDK packaging status |
+| [Kubernetes workload collector](docs/integrations/kubernetes-collector.md) | Collecting namespace-scoped, read-only Pod and Event evidence |
 | [Event data guide](docs/event-data.md) | Knowing which stored fields are generated, configured, or taken from a provider |
 
 ## Verify the local installation
@@ -82,7 +84,8 @@ pnpm incidentiq incidents export deployment-regression --format json
 | 0.1.0 | Complete | Authenticated event-ingestion API |
 | 0.2.0 | Complete | Safe Node.js SDK implementation with batched, fail-open export |
 | 0.3.0 | Complete | GitHub Actions deployment context |
-| 0.4.0 | Planned | Read-only Kubernetes workload signals |
+| 0.4.0 | Complete | Read-only Kubernetes workload signals |
+| 0.4.1 | Planned | Checkpointed Kubernetes watches and curated signal expansion |
 | 0.5.0 | Planned | Automatic incident detection and unified timeline |
 | 0.6.0 | Planned | Evidence-bounded AI explanation |
 | 0.8.0 | Planned | Reliability, retention, quotas, and cost controls |
@@ -90,7 +93,7 @@ pnpm incidentiq incidents export deployment-regression --format json
 
 ## CI and image releases
 
-GitHub Actions runs the PostgreSQL-backed test suite for pull requests and pushes to `main`. After a successful `main` CI run, the separate **Publish API image** workflow publishes `ghcr.io/<owner>/incidentiq-api:latest` and an immutable `sha-<commit SHA>` image to GitHub Container Registry.
+GitHub Actions runs the PostgreSQL-backed test suite for pull requests and pushes to `main`. After a successful `main` CI run, the separate **Publish images** workflow publishes API and Kubernetes collector images to GitHub Container Registry with `latest` and immutable `sha-<commit SHA>` tags.
 
 Protect `main` in GitHub so changes reach it through reviewed pull requests; that makes each image publish correspond to a merged change. Deploy `sha-<commit SHA>` when you need an immutable image, and reserve `latest` for development or a moving mainline environment.
 
@@ -98,6 +101,7 @@ To deploy the image built for a particular merge:
 
 ```sh
 docker pull ghcr.io/<owner>/incidentiq-api:sha-<commit-sha>
+docker pull ghcr.io/<owner>/incidentiq-kubernetes-collector:sha-<commit-sha>
 ```
 
 The registry image runs the API. In the current version, use a source checkout and the CLI to create ingestion keys and inspect events.

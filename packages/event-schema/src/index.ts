@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = "0.0.2";
+export const SCHEMA_VERSION = "0.0.3";
 
 export interface NormalizedEvent {
   event_id: string;
@@ -30,7 +30,7 @@ export interface ValidationResult {
 
 const SOURCES = new Set<NormalizedEvent["source"]>(["node_sdk", "github_actions", "kubernetes", "internal"]);
 const SEVERITIES = new Set<NormalizedEvent["severity"]>(["debug", "info", "warning", "error", "critical"]);
-const RESOURCE_EVENT_TYPES = new Set(["oom_killed", "pod_restart", "crash_loop_back_off"]);
+const RESOURCE_EVENT_TYPES = new Set(["oom_killed", "pod_restart", "crash_loop_back_off", "failed_scheduling", "unhealthy"]);
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
