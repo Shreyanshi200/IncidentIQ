@@ -1,9 +1,9 @@
 # IncidentIQ
 
 [![CI](https://github.com/Shreyanshi200/IncidentIQ/actions/workflows/ci.yml/badge.svg)](https://github.com/Shreyanshi200/IncidentIQ/actions/workflows/ci.yml)
-[![Node.js 24+](https://img.shields.io/badge/node-%3E%3D24-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-18-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Node.js 24+](https://img.shields.io/badge/Node.js-24%2B-339933.svg)](https://nodejs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6.svg)](https://www.typescriptlang.org/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-18-4169E1.svg)](https://www.postgresql.org/)
 
 <p align="center">
   <img src="assets/incidentiq-iq.png" alt="Abstract illustration of application, deployment, and infrastructure signals flowing into an IncidentIQ evidence graph" width="960">
