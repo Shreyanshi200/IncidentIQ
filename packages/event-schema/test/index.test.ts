@@ -19,6 +19,11 @@ test("specialized contracts accept their required shapes", () => {
   assert.equal(validateDeployment(event).valid, true);
   assert.equal(validateResource({ ...event, source: "kubernetes", event_type: "oom_killed" }).valid, true);
   assert.equal(validateResource({ ...event, source: "kubernetes", event_type: "failed_scheduling" }).valid, true);
+  assert.equal(validateResource({ ...event, source: "kubernetes", event_type: "image_pull_back_off" }).valid, true);
+  assert.equal(validateResource({ ...event, source: "kubernetes", event_type: "pod_evicted" }).valid, true);
+  assert.equal(validateResource({ ...event, source: "kubernetes", event_type: "failed_volume_mount" }).valid, true);
+  assert.equal(validateResource({ ...event, source: "kubernetes", event_type: "deployment_rollout_failed" }).valid, true);
+  assert.equal(validateResource({ ...event, source: "kubernetes", event_type: "job_failed" }).valid, true);
   assert.equal(validateIncident({ incident_id: "incident-1", service: "orders", environment: "local", state: "open", started_at: event.occurred_at }).valid, true);
   assert.equal(validateEvidence({ evidence_id: "evidence-1", event_id: event.event_id, factor: "temporal_proximity" }).valid, true);
 });

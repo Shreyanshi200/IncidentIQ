@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
 import type { NormalizedEvent } from "@incidentiq/event-schema";
 import type { CollectorConfig } from "./config.js";
-import type { KubernetesPod, KubernetesWorkloadEvent } from "./types.js";
+import type { KubernetesDeployment, KubernetesJob, KubernetesPod, KubernetesWorkloadEvent } from "./types.js";
 
 interface SignalInput {
-  type: "oom_killed" | "pod_restart" | "crash_loop_back_off" | "failed_scheduling" | "unhealthy";
+  type: "oom_killed" | "pod_restart" | "crash_loop_back_off" | "failed_scheduling" | "unhealthy" | "image_pull_back_off" | "pod_evicted" | "failed_volume_mount" | "deployment_rollout_failed" | "job_failed";
   severity: NormalizedEvent["severity"];
   occurredAt: string;
   namespace: string;
@@ -16,6 +16,7 @@ interface SignalInput {
   container?: string;
   message?: string;
   restartCount?: number;
+  resourceType?: "deployment" | "job";
 }
 
 function timestamp(value: string | Date | undefined, fallback: Date): string {
@@ -27,8 +28,8 @@ function eventId(...parts: string[]): string {
   return `k8s_${createHash("sha256").update(parts.join("\u0000")).digest("hex")}`;
 }
 
-function serviceFor(pod: KubernetesPod, serviceLabel: string): string | undefined {
-  const service = pod.metadata?.labels?.[serviceLabel]?.trim();
+function serviceFor(workload: { metadata?: { labels?: Record<string, string> } }, serviceLabel: string): string | undefined {
+  const service = workload.metadata?.labels?.[serviceLabel]?.trim();
   return service || undefined;
 }
 
@@ -41,6 +42,7 @@ function podIdentity(pod: KubernetesPod, serviceLabel: string): { namespace: str
 }
 
 function createSignal(config: CollectorConfig, input: SignalInput, receivedAt: string): NormalizedEvent {
+  const resourceType = input.resourceType ?? "pod";
   return {
     event_id: eventId(config.clusterName, input.podUid, input.type, input.identity),
     occurred_at: input.occurredAt,
@@ -51,11 +53,11 @@ function createSignal(config: CollectorConfig, input: SignalInput, receivedAt: s
     source: "kubernetes",
     event_type: input.type,
     severity: input.severity,
-    resource: `pod/${input.namespace}/${input.pod}`,
+    resource: `${resourceType}/${input.namespace}/${input.pod}`,
     attributes: {
       cluster: config.clusterName,
       namespace: input.namespace,
-      pod: input.pod,
+      [resourceType]: input.pod,
       reason: input.reason,
       ...(input.container ? { container: input.container } : {}),
       ...(input.message ? { message: input.message.slice(0, 1024) } : {}),
@@ -90,6 +92,14 @@ function podSignals(config: CollectorConfig, pod: KubernetesPod, now: Date): Nor
         container, message: status.state.waiting.message, restartCount: status.restartCount
       }, receivedAt));
     }
+    if (status.state?.waiting?.reason === "ImagePullBackOff" || status.state?.waiting?.reason === "ErrImagePull") {
+      signals.push(createSignal(config, {
+        type: "image_pull_back_off", severity: "error", occurredAt: timestamp(status.state.waiting.startedAt, now),
+        namespace: identity.namespace, pod: identity.name, podUid: identity.uid, service: identity.service,
+        reason: status.state.waiting.reason, identity: `${container}:${status.state.waiting.reason}:${status.restartCount ?? 0}`,
+        container, message: status.state.waiting.message, restartCount: status.restartCount
+      }, receivedAt));
+    }
     if ((status.restartCount ?? 0) > 0) {
       signals.push(createSignal(config, {
         type: "pod_restart", severity: "warning", occurredAt: now.toISOString(),
@@ -109,14 +119,58 @@ function podSignals(config: CollectorConfig, pod: KubernetesPod, now: Date): Nor
       message: unschedulable.message
     }, receivedAt));
   }
+  if (pod.status?.reason === "Evicted") {
+    signals.push(createSignal(config, {
+      type: "pod_evicted", severity: "error", occurredAt: timestamp(pod.metadata?.creationTimestamp, now),
+      namespace: identity.namespace, pod: identity.name, podUid: identity.uid, service: identity.service,
+      reason: "Evicted", identity: "Evicted", message: pod.status.message
+    }, receivedAt));
+  }
   return signals;
+}
+
+function workloadIdentity(workload: { metadata?: { name?: string; namespace?: string; uid?: string; labels?: Record<string, string> } }, serviceLabel: string): { namespace: string; name: string; uid: string; service: string } | undefined {
+  const namespace = workload.metadata?.namespace;
+  const name = workload.metadata?.name;
+  const uid = workload.metadata?.uid;
+  const service = serviceFor(workload, serviceLabel);
+  return namespace && name && uid && service ? { namespace, name, uid, service } : undefined;
+}
+
+function deploymentSignals(config: CollectorConfig, deployment: KubernetesDeployment, now: Date): NormalizedEvent[] {
+  const identity = workloadIdentity(deployment, config.serviceLabel);
+  const stalled = deployment.status?.conditions?.find((condition) => condition.type === "Progressing" && condition.status === "False" && condition.reason === "ProgressDeadlineExceeded");
+  if (!identity || !stalled) return [];
+  const occurredAt = timestamp(stalled.lastTransitionTime, now);
+  return [createSignal(config, {
+    type: "deployment_rollout_failed", severity: "error", occurredAt,
+    namespace: identity.namespace, pod: identity.name, podUid: identity.uid, service: identity.service,
+    reason: stalled.reason ?? "ProgressDeadlineExceeded", identity: (stalled.reason ?? "ProgressDeadlineExceeded") + ":" + occurredAt,
+    message: stalled.message, resourceType: "deployment"
+  }, now.toISOString())];
+}
+
+function jobSignals(config: CollectorConfig, job: KubernetesJob, now: Date): NormalizedEvent[] {
+  const identity = workloadIdentity(job, config.serviceLabel);
+  const failed = job.status?.conditions?.find((condition) => condition.type === "Failed" && condition.status === "True");
+  if (!identity || !failed) return [];
+  const occurredAt = timestamp(failed.lastTransitionTime, now);
+  return [createSignal(config, {
+    type: "job_failed", severity: "error", occurredAt,
+    namespace: identity.namespace, pod: identity.name, podUid: identity.uid, service: identity.service,
+    reason: failed.reason ?? "JobFailed", identity: (failed.reason ?? "JobFailed") + ":" + occurredAt,
+    message: failed.message, resourceType: "job"
+  }, now.toISOString())];
 }
 
 function eventType(event: KubernetesWorkloadEvent): SignalInput["type"] | undefined {
   if (event.reason === "FailedScheduling") return "failed_scheduling";
   if (event.reason === "OOMKilling" || event.message?.includes("OOMKilled")) return "oom_killed";
+  if ((event.reason === "BackOff" && /pulling image/i.test(event.message ?? "")) || /ErrImagePull|ImagePullBackOff|Failed to pull image/i.test(event.message ?? "")) return "image_pull_back_off";
   if (event.reason === "BackOff" || event.message?.includes("CrashLoopBackOff")) return "crash_loop_back_off";
   if (event.reason === "Unhealthy") return "unhealthy";
+  if (event.reason === "Evicted") return "pod_evicted";
+  if (event.reason === "FailedMount" || event.reason === "FailedAttachVolume") return "failed_volume_mount";
   return undefined;
 }
 
@@ -145,12 +199,17 @@ function workloadEventSignals(config: CollectorConfig, pods: Map<string, Kuberne
   }, now.toISOString())];
 }
 
-export function createKubernetesSignals(config: CollectorConfig, pods: KubernetesPod[], events: KubernetesWorkloadEvent[], now = new Date()): NormalizedEvent[] {
+export function createKubernetesSignals(config: CollectorConfig, pods: KubernetesPod[], events: KubernetesWorkloadEvent[], now = new Date(), deployments: KubernetesDeployment[] = [], jobs: KubernetesJob[] = []): NormalizedEvent[] {
   const podsByName = new Map(pods.flatMap((pod) => {
     const namespace = pod.metadata?.namespace;
     const name = pod.metadata?.name;
     return namespace && name ? [[`${namespace}/${name}`, pod] as const] : [];
   }));
-  const signals = [...pods.flatMap((pod) => podSignals(config, pod, now)), ...events.flatMap((event) => workloadEventSignals(config, podsByName, event, now))];
+  const signals = [
+    ...pods.flatMap((pod) => podSignals(config, pod, now)),
+    ...events.flatMap((event) => workloadEventSignals(config, podsByName, event, now)),
+    ...deployments.flatMap((deployment) => deploymentSignals(config, deployment, now)),
+    ...jobs.flatMap((job) => jobSignals(config, job, now))
+  ];
   return [...new Map(signals.map((signal) => [signal.event_id, signal])).values()];
 }

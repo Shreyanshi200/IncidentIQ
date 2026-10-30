@@ -10,7 +10,13 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["pods", "events"]
-    verbs: ["list"]
+    verbs: ["list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -41,7 +47,7 @@ spec:
       serviceAccountName: incidentiq-kubernetes-collector
       containers:
         - name: collector
-          image: your-registry/incidentiq-kubernetes-collector:0.4.0
+          image: your-registry/incidentiq-kubernetes-collector:0.4.1
           imagePullPolicy: IfNotPresent
           env:
             - name: INCIDENTIQ_API_KEY

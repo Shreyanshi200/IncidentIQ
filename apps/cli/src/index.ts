@@ -29,7 +29,7 @@ async function readFixture(file: string): Promise<IncidentFixture> {
 
 try {
   if (command === "version") {
-    console.log(`incidentiq 0.4.0 (schema ${SCHEMA_VERSION})`);
+    console.log(`incidentiq 0.4.1 (schema ${SCHEMA_VERSION})`);
   } else if (command === "api" && subcommand === "start") {
     const api = spawn(process.execPath, [fileURLToPath(new URL("../../../api/dist/src/main.js", import.meta.url))], { stdio: "inherit", env: process.env });
     await new Promise<void>((resolveStart, rejectStart) => api.once("exit", (code) => code === 0 ? resolveStart() : rejectStart(new Error(`API exited with code ${code}`))));

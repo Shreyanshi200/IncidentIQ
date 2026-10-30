@@ -44,6 +44,6 @@ These conventions keep deployment, application, and Kubernetes evidence joinable
 
 The Kubernetes collector produces `source: "kubernetes"` events from a configured namespace. `service` comes from the Pod label `app.kubernetes.io/name` by default; unlabeled Pods are intentionally ignored so ephemeral Pod names do not become service identities.
 
-`resource` identifies the affected workload as `pod/<namespace>/<pod-name>`. The collector records the cluster name, namespace, Pod, container when available, Kubernetes reason, restart count when available, and a bounded diagnostic message. Its event IDs are deterministic, so repeated polling and collector restarts do not duplicate evidence in the API.
+`resource` identifies the affected workload as `pod/<namespace>/<pod-name>`, `deployment/<namespace>/<deployment-name>`, or `job/<namespace>/<job-name>`. The collector records the cluster name, namespace, workload name, Kubernetes reason, container when available, restart count when available, and a bounded diagnostic message. Its event IDs are deterministic, so watch reconnects and collector restarts do not duplicate evidence in the API.
 
 See the [Kubernetes workload collector guide](integrations/kubernetes-collector.md) for its read-only RBAC manifest and configuration.

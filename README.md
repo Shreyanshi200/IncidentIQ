@@ -27,9 +27,10 @@ This is the quickest way to run IncidentIQ on your computer. It starts PostgreSQ
 
 - Git
 - Node.js 24 or newer
+- pnpm 11.6
 - Docker Desktop (running)
 
-`pnpm` is installed through Corepack in the setup below. You do not need to install it separately.
+If `pnpm` is not available on your machine, install the repository-pinned version with `npm install --global pnpm@11.6.0`.
 
 ### 1. Download the project
 
@@ -42,10 +43,6 @@ cd IncidentIQ
 ```
 
 ### 2. Install project dependencies
-
-```sh
-corepack enable
-```
 
 ```sh
 pnpm install --frozen-lockfile
@@ -137,7 +134,7 @@ For a remote API, the producer needs the API's HTTPS URL and the `iiq_...` inges
 - A local CLI for inspecting stored events and deterministic sample investigations
 - A fail-open Node.js SDK implementation for application events
 - A GitHub Action for deployment context that does not fail a deployment if IncidentIQ is unavailable
-- A namespace-scoped, read-only Kubernetes collector for workload failures
+- A namespace-scoped, read-only Kubernetes collector with reconnecting Pod, Event, Deployment, and Job watches
 
 Not included yet: a web dashboard, automatic incident creation, cluster-wide Kubernetes collection, or a published npm SDK package. See the roadmap for what comes next.
 
@@ -246,8 +243,25 @@ The API image runs the API only. At this stage, use a source checkout and the CL
 | 0.2.0 | Complete | Safe Node.js SDK implementation with batched, fail-open export |
 | 0.3.0 | Complete | GitHub Actions deployment context |
 | 0.4.0 | Complete | Read-only Kubernetes workload signals |
-| 0.4.1 | Planned | Checkpointed Kubernetes watches and curated signal expansion |
+| 0.4.1 | In development | Checkpointed Pod, Deployment, and Job watches with curated reliability signals |
+| 0.4.2 | Planned | Read-only Prometheus CPU, memory, latency, and error-rate evidence |
 | 0.5.0 | Planned | Automatic incident detection and unified timeline |
-| 0.6.0 | Planned | Evidence-bounded AI explanation |
-| 0.8.0 | Planned | Reliability, retention, quotas, and cost controls |
-| 0.9.0–1.0.0 | Planned | ClickHouse, Kafka, portfolio hardening, and stable MVP |
+| 0.6.0 | Planned | Single-operator dashboard: services, environments, integration setup, and local configuration |
+| 0.6.1 | Planned | Dashboard investigations: incident list, evidence timeline, signal filters, and integration health |
+| 0.7.0 | Planned | Evidence-bounded AI explanations and suggested next investigation steps |
+| 0.8.0 | Planned | Operational polish: retention, safer API-key handling, and cost controls |
+| 0.9.0 | Planned | ClickHouse for scalable historical event storage and investigations |
+| 0.9.1 | Planned | Kafka-based streaming ingestion for high-volume, near-real-time evidence |
+| 1.0.0 | Planned | Stable single-operator MVP with clear setup, reliable integrations, and documented operating guidance |
+
+## Future extensibility
+
+IncidentIQ is intentionally starting as a single-operator product. If it later needs to support teams or a managed offering, the architecture can be extended with:
+
+- multi-user authentication, tenants, roles, and audit history;
+- incident acknowledgement, assignment, resolution, and time-bounded suppression rules;
+- notifications and integrations with Slack, PagerDuty, Jira, or similar tools;
+- managed collector configuration, API-key rotation, and organization-wide policies; and
+- cluster-wide Kubernetes and multi-cluster collection.
+
+These are future expansion paths, not commitments for the current MVP.

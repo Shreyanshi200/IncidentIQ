@@ -5,15 +5,16 @@ This guide starts a local, self-hosted IncidentIQ installation. It is the suppor
 ## Requirements
 
 - Node.js 24 or newer
-- pnpm 11 (Corepack installs the repository-pinned version)
+- pnpm 11.6
 - Docker Desktop, for PostgreSQL
+
+If `pnpm` is not installed, run `npm install --global pnpm@11.6.0`.
 
 ## 1. Install and configure
 
 ```sh
 git clone https://github.com/Shreyanshi200/IncidentIQ.git
 cd IncidentIQ
-corepack enable
 pnpm install --frozen-lockfile
 cp .env.example .env
 docker compose up -d postgres
