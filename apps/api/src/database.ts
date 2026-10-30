@@ -35,8 +35,15 @@ interface Database {
   api_keys: ApiKeysTable;
 }
 
+export function databaseEnvPaths(cwd = process.cwd()): string[] {
+  return [resolve(cwd, ".env"), resolve(cwd, "..", "..", ".env")];
+}
+
 function databaseUrl(): string {
-  if (!process.env.DATABASE_URL && existsSync(resolve(process.cwd(), ".env"))) process.loadEnvFile(resolve(process.cwd(), ".env"));
+  if (!process.env.DATABASE_URL) {
+    const envFile = databaseEnvPaths().find((path) => existsSync(path));
+    if (envFile) process.loadEnvFile(envFile);
+  }
   if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required; see .env.example");
   return process.env.DATABASE_URL;
 }

@@ -6,7 +6,7 @@ export interface CollectorConfig {
   clusterName: string;
   namespace: string;
   serviceLabel: string;
-  pollIntervalMs: number;
+  watchReconnectDelayMs: number;
 }
 
 function required(environment: NodeJS.ProcessEnv, name: string): string {
@@ -32,6 +32,6 @@ export function readCollectorConfig(environment = process.env): CollectorConfig 
     clusterName: required(environment, "INCIDENTIQ_CLUSTER_NAME"),
     namespace: required(environment, "INCIDENTIQ_KUBERNETES_NAMESPACE"),
     serviceLabel: environment.INCIDENTIQ_SERVICE_LABEL?.trim() || "app.kubernetes.io/name",
-    pollIntervalMs: positiveInteger(environment.INCIDENTIQ_POLL_INTERVAL_MS, "INCIDENTIQ_POLL_INTERVAL_MS", 30_000)
+    watchReconnectDelayMs: positiveInteger(environment.INCIDENTIQ_WATCH_RECONNECT_DELAY_MS, "INCIDENTIQ_WATCH_RECONNECT_DELAY_MS", 1_000)
   };
 }

@@ -1,6 +1,6 @@
 {
   "name": "@incidentiq/event-schema",
-  "version": "0.0.3",
+  "version": "0.0.5",
   "type": "module",
   "types": "./src/index.ts",
   "exports": {
