@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { glob, readFile } from "node:fs/promises";
-import { validateDeployment, validateEvidence, validateFixture, validateIncident, validateResource } from "@incidentiq/event-schema";
+import { validateDeployment, validateEvent, validateEvidence, validateFixture, validateIncident, validateResource } from "@incidentiq/event-schema";
 
 test("all canonical fixtures validate", async () => {
   for await (const file of glob("demo/fixtures/*.json", { cwd: process.cwd() })) {
@@ -24,6 +24,7 @@ test("specialized contracts accept their required shapes", () => {
   assert.equal(validateResource({ ...event, source: "kubernetes", event_type: "failed_volume_mount" }).valid, true);
   assert.equal(validateResource({ ...event, source: "kubernetes", event_type: "deployment_rollout_failed" }).valid, true);
   assert.equal(validateResource({ ...event, source: "kubernetes", event_type: "job_failed" }).valid, true);
+  assert.equal(validateEvent({ ...event, source: "alertmanager", event_type: "cpu_throttling", resource: "service/payments/orders" }).valid, true);
   assert.equal(validateIncident({ incident_id: "incident-1", service: "orders", environment: "local", state: "open", started_at: event.occurred_at }).valid, true);
   assert.equal(validateEvidence({ evidence_id: "evidence-1", event_id: event.event_id, factor: "temporal_proximity" }).valid, true);
 });

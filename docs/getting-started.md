@@ -71,9 +71,11 @@ Choose an integration:
 
 - [GitHub Actions](integrations/github-actions.md) for deployment context.
 - [Node.js SDK](integrations/node-sdk.md) for application events.
+- [Kubernetes collector](integrations/kubernetes-collector.md) for read-only workload failures.
+- [Prometheus Alertmanager](integrations/alertmanager.md) for production alert delivery from your existing alert rules.
 
 ## Production notes
 
-The API needs a PostgreSQL database and must be reachable over HTTPS by remote producers such as GitHub-hosted runners. The GitHub Action guide explains the required CI secret and URL.
+The API needs a PostgreSQL database and must be reachable over HTTPS by remote producers such as GitHub-hosted runners. Use the [production API deployment guide](deployment/api-production.md) for a repeatable Docker, reverse-proxy, backup, and upgrade setup.
 
-The API and Kubernetes collector images are published to GitHub Container Registry after CI succeeds for a change on `main`. Each publish creates a moving `latest` tag and an immutable `sha-<commit SHA>` tag. The API image runs the API process only. Key provisioning and event inspection currently use the repository CLI; an operator therefore needs a source checkout with the same database connection string.
+The API and Kubernetes collector images are published to GitHub Container Registry after CI succeeds for a change on `main`. Each publish creates a moving `latest` tag and an immutable `sha-<commit SHA>` tag. Prefer the immutable tag in a real deployment.

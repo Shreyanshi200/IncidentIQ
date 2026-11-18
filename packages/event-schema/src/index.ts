@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = "0.0.5";
+export const SCHEMA_VERSION = "0.0.6";
 
 export interface NormalizedEvent {
   event_id: string;
@@ -7,7 +7,7 @@ export interface NormalizedEvent {
   tenant_id: string;
   environment: string;
   service: string;
-  source: "node_sdk" | "github_actions" | "kubernetes" | "internal";
+  source: "node_sdk" | "github_actions" | "kubernetes" | "alertmanager" | "internal";
   event_type: string;
   severity: "debug" | "info" | "warning" | "error" | "critical";
   version?: string;
@@ -28,7 +28,7 @@ export interface ValidationResult {
   errors: string[];
 }
 
-const SOURCES = new Set<NormalizedEvent["source"]>(["node_sdk", "github_actions", "kubernetes", "internal"]);
+const SOURCES = new Set<NormalizedEvent["source"]>(["node_sdk", "github_actions", "kubernetes", "alertmanager", "internal"]);
 const SEVERITIES = new Set<NormalizedEvent["severity"]>(["debug", "info", "warning", "error", "critical"]);
 const RESOURCE_EVENT_TYPES = new Set(["oom_killed", "pod_restart", "crash_loop_back_off", "failed_scheduling", "unhealthy", "image_pull_back_off", "pod_evicted", "failed_volume_mount", "deployment_rollout_failed", "job_failed"]);
 

@@ -57,7 +57,7 @@ process.once("SIGINT", () => void incidentiq.shutdown());
 | Batch size | 100 events |
 | Flush interval | 2 seconds |
 | In-memory queue limit | 1,000 events |
-| On API failure | Requeues the batch; the oldest queued events are dropped only when the queue reaches its limit |
+| On API failure | Requeues the batch. The in-memory queue is bounded, so events can be lost during a prolonged API outage |
 | API endpoint | `POST /v1/events/batch` with a bearer ingestion key |
 
 The API overwrites `received_at` when it accepts an event, so that field represents the server's receipt time. The client-provided `occurred_at` remains the event's observed time.

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { ApiKeysService } from "../src/api-keys.service.js";
+import { normalizeAlertmanagerWebhook } from "../src/alertmanager.service.js";
 import { createApp } from "../src/app.js";
 import { DatabaseService } from "../src/database.js";
 
@@ -37,6 +38,28 @@ test("ingestion accepts, redacts, deduplicates, and rejects invalid batches", { 
     assert.deepEqual(await (await request({ events: [event] }, `Bearer ${apiKey}`)).json(), { accepted: 0, duplicates: 1 });
     const stored = await app.get(DatabaseService).db.selectFrom("source_events").select("attributes").where("event_id", "=", event.event_id).executeTakeFirstOrThrow();
     assert.deepEqual(stored.attributes, { authorization: "[REDACTED]", message: "database error" });
+
+    const alertPayload = {
+      version: "4",
+      alerts: [{
+        status: "firing",
+        labels: { alertname: "HighLatency", severity: "critical", service: "orders", namespace: "payments", incidentiq_signal: "latency_spike" },
+        annotations: { summary: "p95 latency is above one second" },
+        startsAt: "2026-10-30T08:00:00.000Z",
+        fingerprint: randomUUID()
+      }]
+    };
+    const alertRequest = (authorization?: string) => fetch(`${baseUrl}/v1/integrations/alertmanager`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...(authorization ? { authorization } : {}) },
+      body: JSON.stringify(alertPayload)
+    });
+    assert.equal((await alertRequest()).status, 401);
+    assert.deepEqual(await (await alertRequest(`Bearer ${apiKey}`)).json(), { accepted: 1, duplicates: 0 });
+    assert.deepEqual(await (await alertRequest(`Bearer ${apiKey}`)).json(), { accepted: 0, duplicates: 1 });
+    const alert = normalizeAlertmanagerWebhook(alertPayload, "local")[0]!;
+    const storedAlert = await app.get(DatabaseService).db.selectFrom("source_events").select(["source", "event_type", "resource"]).where("event_id", "=", alert.event_id).executeTakeFirstOrThrow();
+    assert.deepEqual(storedAlert, { source: "alertmanager", event_type: "latency_spike", resource: "service/payments/orders" });
   } finally {
     await app.close();
   }

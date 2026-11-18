@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, UnauthorizedException } from "@nestjs/common";
 import { type NormalizedEvent, validateEvent } from "@incidentiq/event-schema";
-import { ApiKeysService } from "./api-keys.service.js";
+import { type ApiKeyRecord, ApiKeysService } from "./api-keys.service.js";
 import { DatabaseService } from "./database.js";
 
 const MAX_EVENTS_PER_BATCH = 100;
@@ -20,10 +20,18 @@ function redact(value: unknown): unknown {
 export class EventsService {
   constructor(private readonly database: DatabaseService, private readonly apiKeys: ApiKeysService) {}
 
-  async ingest(authorization: string | undefined, payload: unknown): Promise<{ accepted: number; duplicates: number }> {
+  async authenticate(authorization: string | undefined): Promise<ApiKeyRecord> {
     const key = authorization?.replace(/^Bearer\s+/i, "");
     const apiKey = key ? await this.apiKeys.findActive(key) : undefined;
     if (!apiKey || apiKey.scope !== "ingest") throw new UnauthorizedException("A valid ingestion API key is required");
+    return apiKey;
+  }
+
+  async ingest(authorization: string | undefined, payload: unknown): Promise<{ accepted: number; duplicates: number }> {
+    return this.ingestForApiKey(await this.authenticate(authorization), payload);
+  }
+
+  async ingestForApiKey(apiKey: ApiKeyRecord, payload: unknown): Promise<{ accepted: number; duplicates: number }> {
     if (!isObject(payload) || !Array.isArray(payload.events) || payload.events.length === 0 || payload.events.length > MAX_EVENTS_PER_BATCH) {
       throw new BadRequestException(`events must contain between 1 and ${MAX_EVENTS_PER_BATCH} records`);
     }

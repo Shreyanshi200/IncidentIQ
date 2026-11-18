@@ -1,0 +1,25 @@
+{
+  "version": "4",
+  "status": "resolved",
+  "receiver": "incidentiq",
+  "alerts": [
+    {
+      "status": "resolved",
+      "labels": {
+        "alertname": "HighLatency",
+        "severity": "critical",
+        "service": "orders",
+        "namespace": "payments",
+        "environment": "production",
+        "incidentiq_signal": "latency_spike"
+      },
+      "annotations": {
+        "summary": "p95 request latency recovered"
+      },
+      "startsAt": "2026-10-30T08:00:00.000Z",
+      "endsAt": "2026-10-30T08:05:00.000Z",
+      "generatorURL": "https://prometheus.example.com/graph?g0.expr=high_latency",
+      "fingerprint": "incidentiq-example-high-latency"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "version": "4",
+  "status": "firing",
+  "receiver": "incidentiq",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "HighLatency",
+        "severity": "critical",
+        "service": "orders",
+        "namespace": "payments",
+        "environment": "production",
+        "incidentiq_signal": "latency_spike"
+      },
+      "annotations": {
+        "summary": "p95 request latency is above one second"
+      },
+      "startsAt": "2026-10-30T08:00:00.000Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "generatorURL": "https://prometheus.example.com/graph?g0.expr=high_latency",
+      "fingerprint": "incidentiq-example-high-latency"
+    }
+  ]
+}
