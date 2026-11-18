@@ -249,7 +249,7 @@ The API image starts the API by default. It also includes the IncidentIQ CLI, so
 | 0.4.0 | Complete | Read-only Kubernetes workload signals |
 | 0.4.1 | Complete | Checkpointed Pod, Deployment, and Job watches with curated reliability signals |
 | 0.4.2 | Complete | Production-oriented Alertmanager ingestion for Prometheus reliability alerts |
-| 0.5.0 | In development | Public Node.js SDK: npm packages, trusted publishing, and external-install verification |
+| 0.5.0 | Complete | Public Node.js SDK: npm packages, trusted publishing, and external-install verification |
 | 0.6.0 | Planned | Automatic incident detection and unified timeline |
 | 0.7.0 | Planned | Single-operator dashboard: services, environments, integration setup, and local configuration |
 | 0.7.1 | Planned | Dashboard investigations: incident list, evidence timeline, signal filters, and integration health |
