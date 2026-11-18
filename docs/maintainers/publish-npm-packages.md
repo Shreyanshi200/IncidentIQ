@@ -9,7 +9,7 @@ The SDK must never be published without the matching schema package.
 
 ## Before the first release
 
-1. Create or take ownership of the `incidentiq` organization on npmjs.com. The package names in this repository use that scope.
+1. Create or take ownership of the `incidentiqhq` organization on npmjs.com. The package names in this repository use that scope.
 2. Enable two-factor authentication for the npm account or organization owner.
 3. Keep the repository's MIT license and copyright notice intact in every distributed package.
 4. Configure npm Trusted Publishing for both packages. In each npm package's **Settings → Trusted publishing**, choose GitHub Actions and enter:
@@ -19,11 +19,11 @@ The SDK must never be published without the matching schema package.
    | GitHub owner | `Shreyanshi200` |
    | Repository | `IncidentIQ` |
    | Workflow filename | `publish-npm.yml` |
-   | Allowed action | `npm publish` |
+   | Allowed action | `npm stage publish` |
 
-If npm requires a package to exist before its Trusted Publishing settings are available, make the initial publish manually with a 2FA-protected npm account, then enable Trusted Publishing immediately for later releases.
+If npm requires a package to exist before its Trusted Publishing settings are available, stage the initial package version manually and approve it with a 2FA-protected npm account, then enable Trusted Publishing immediately for later releases.
 
-The workflow uses GitHub OIDC, not an `NPM_TOKEN` secret. npm exchanges the short-lived GitHub identity for publishing access and records provenance for eligible public packages.
+The workflow uses GitHub OIDC, not an `NPM_TOKEN` secret. It stages packages for human review; a maintainer approves each staged version with 2FA before it becomes public.
 
 ## What the repository verifies
 
@@ -43,11 +43,12 @@ The packages publish only their compiled `dist` files and package README. `works
 2. Run the verification command above and open a pull request.
 3. Merge the pull request into `main` after CI succeeds.
 4. Create and push the product tag, for example `v0.5.0`.
-5. GitHub Actions runs `publish-npm.yml`. It only publishes when `packages/event-schema` or `packages/node-sdk` changed since the previous product tag.
-6. Confirm both npm package pages show the expected version and provenance information.
-7. In a separate empty project, install `@incidentiqhq/node-sdk` from npm and send a test event to a non-production IncidentIQ API.
+5. GitHub Actions runs `publish-npm.yml`. It stages packages only when `packages/event-schema` or `packages/node-sdk` changed since the previous product tag.
+6. On npmjs.com, open **Staged Packages**, review both package names, versions, tags, and tarball contents, then approve them with 2FA.
+7. Confirm both npm package pages show the expected public version and provenance information.
+8. In a separate empty project, install `@incidentiqhq/node-sdk` from npm and send a test event to a non-production IncidentIQ API.
 
-If the publishing job fails after it publishes the schema but before it publishes the SDK, rerun the job after fixing the cause. The workflow detects an already-published exact version and continues with the missing package. npm versions are immutable; bump the SDK version if its tarball needs to change.
+If a version is already staged, approve or reject that stage before retrying its release. npm versions are immutable; bump the package version if its tarball needs to change.
 
 ## Updating the SDK later
 
