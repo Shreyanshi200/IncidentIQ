@@ -4,8 +4,8 @@ import { resolve } from "node:path";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { type Generated, Kysely, PostgresDialect, sql } from "kysely";
 import { Pool } from "pg";
-import type { IncidentFixture, NormalizedEvent } from "@incidentiq/event-schema";
-import type { CorrelationResult } from "@incidentiq/correlation";
+import type { IncidentFixture, NormalizedEvent } from "@incidentiqhq/event-schema";
+import type { CorrelationResult } from "@incidentiqhq/correlation";
 
 export interface StoredEvent extends NormalizedEvent {
   created_at: string;

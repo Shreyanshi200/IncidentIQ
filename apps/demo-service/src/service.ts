@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
-import type { NormalizedEvent } from "@incidentiq/event-schema";
-import type { IncidentIQClient } from "@incidentiq/node-sdk";
+import type { NormalizedEvent } from "@incidentiqhq/event-schema";
+import type { IncidentIQClient } from "@incidentiqhq/node-sdk";
 
 export function createDemoFailureEvent(message: string, now = new Date()): NormalizedEvent {
   return {

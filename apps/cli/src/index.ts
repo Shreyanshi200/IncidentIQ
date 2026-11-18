@@ -3,8 +3,8 @@ import { readFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { correlate } from "@incidentiq/correlation";
-import { SCHEMA_VERSION, type IncidentFixture, validateFixture } from "@incidentiq/event-schema";
+import { correlate } from "@incidentiqhq/correlation";
+import { SCHEMA_VERSION, type IncidentFixture, validateFixture } from "@incidentiqhq/event-schema";
 import { applyMigrations, createDatabase, createIngestionKey, getIncident, listEvents, listIncidents, loadFixture, saveInvestigation } from "./database.js";
 import { formatIncidentList, formatInvestigation } from "./format.js";
 
@@ -29,7 +29,7 @@ async function readFixture(file: string): Promise<IncidentFixture> {
 
 try {
   if (command === "version") {
-    console.log(`incidentiq 0.4.2 (schema ${SCHEMA_VERSION})`);
+    console.log(`incidentiq 0.5.0 (schema ${SCHEMA_VERSION})`);
   } else if (command === "api" && subcommand === "start") {
     const api = spawn(process.execPath, [fileURLToPath(new URL("../../../api/dist/src/main.js", import.meta.url))], { stdio: "inherit", env: process.env });
     await new Promise<void>((resolveStart, rejectStart) => api.once("exit", (code) => code === 0 ? resolveStart() : rejectStart(new Error(`API exited with code ${code}`))));

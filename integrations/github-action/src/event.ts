@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { NormalizedEvent } from "@incidentiq/event-schema";
+import type { NormalizedEvent } from "@incidentiqhq/event-schema";
 
 export interface DeploymentContext {
   tenantId: string;

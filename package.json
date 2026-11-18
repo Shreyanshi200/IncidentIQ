@@ -1,19 +1,21 @@
 {
   "name": "incidentiq",
   "private": true,
+  "license": "MIT",
   "type": "module",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "packageManager": "pnpm@11.6.0",
   "engines": {
     "node": ">=24"
   },
   "scripts": {
-    "build": "pnpm --filter @incidentiq/event-schema build && pnpm --filter @incidentiq/correlation build && pnpm --filter @incidentiq/api build && pnpm --filter @incidentiq/node-sdk build && pnpm --filter @incidentiq/github-action build && pnpm --filter @incidentiq/kubernetes-collector build && pnpm --filter @incidentiq/demo-service build && pnpm --filter @incidentiq/cli build",
+    "build": "pnpm --filter @incidentiqhq/event-schema build && pnpm --filter @incidentiqhq/correlation build && pnpm --filter @incidentiqhq/api build && pnpm --filter @incidentiqhq/node-sdk build && pnpm --filter @incidentiqhq/github-action build && pnpm --filter @incidentiqhq/kubernetes-collector build && pnpm --filter @incidentiqhq/demo-service build && pnpm --filter @incidentiqhq/cli build",
     "test": "pnpm build && node --test packages/event-schema/dist/test/*.test.js packages/correlation/dist/test/*.test.js packages/node-sdk/dist/test/*.test.js integrations/github-action/build/test/*.test.js integrations/kubernetes-collector/build/test/*.test.js apps/api/dist/test/*.test.js apps/demo-service/dist/test/*.test.js apps/cli/dist/test/*.test.js",
+    "verify:npm-packages": "node scripts/verify-npm-packages.mjs",
     "incidentiq": "pnpm build && node apps/cli/dist/src/index.js",
-    "api": "pnpm --filter @incidentiq/api start",
-    "demo-service": "pnpm --filter @incidentiq/demo-service start",
-    "kubernetes-collector": "pnpm --filter @incidentiq/kubernetes-collector start"
+    "api": "pnpm --filter @incidentiqhq/api start",
+    "demo-service": "pnpm --filter @incidentiqhq/demo-service start",
+    "kubernetes-collector": "pnpm --filter @incidentiqhq/kubernetes-collector start"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",

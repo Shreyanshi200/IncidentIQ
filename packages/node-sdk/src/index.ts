@@ -1,4 +1,4 @@
-import type { NormalizedEvent } from "@incidentiq/event-schema";
+import type { NormalizedEvent } from "@incidentiqhq/event-schema";
 
 export interface IncidentIQOptions {
   apiKey: string;

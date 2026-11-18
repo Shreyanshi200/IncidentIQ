@@ -2,9 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import type { IncidentFixture } from "@incidentiq/event-schema";
+import type { IncidentFixture } from "@incidentiqhq/event-schema";
 import { applyMigrations, createDatabase, getIncident, listEvents, listIncidents, loadFixture, saveInvestigation } from "../src/database.js";
-import { correlate } from "@incidentiq/correlation";
+import { correlate } from "@incidentiqhq/correlation";
 
 const databaseUrl = process.env.DATABASE_URL;
 

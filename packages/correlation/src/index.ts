@@ -1,4 +1,4 @@
-import type { IncidentFixture, NormalizedEvent } from "@incidentiq/event-schema";
+import type { IncidentFixture, NormalizedEvent } from "@incidentiqhq/event-schema";
 
 export type Cause = "deployment_regression" | "resource_exhaustion" | "downstream_timeout" | "bad_release" | "ambiguous";
 

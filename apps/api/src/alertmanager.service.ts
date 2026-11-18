@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { BadRequestException, Injectable } from "@nestjs/common";
-import type { NormalizedEvent } from "@incidentiq/event-schema";
+import type { NormalizedEvent } from "@incidentiqhq/event-schema";
 import { EventsService } from "./events.service.js";
 
 const MAX_ALERTS_PER_WEBHOOK = 1_000;

@@ -195,7 +195,7 @@ Loading the same fixture more than once does not duplicate its source events. Co
 | [Getting started](docs/getting-started.md) | A more detailed self-hosted setup, key creation, and troubleshooting |
 | [Production API deployment](docs/deployment/api-production.md) | Running the API behind HTTPS with PostgreSQL, backups, and an upgrade procedure |
 | [GitHub Actions integration](docs/integrations/github-actions.md) | Recording real deployment metadata from a GitHub workflow |
-| [Node.js SDK integration](docs/integrations/node-sdk.md) | Adding application error events and understanding current SDK packaging |
+| [Node.js SDK integration](docs/integrations/node-sdk.md) | Installing the npm SDK and sending application error events |
 | [Kubernetes workload collector](docs/integrations/kubernetes-collector.md) | Installing and testing the read-only namespace collector |
 | [Prometheus Alertmanager integration](docs/integrations/alertmanager.md) | Recording firing and resolved Prometheus alerts through Alertmanager webhooks |
 | [Event data guide](docs/event-data.md) | Understanding which fields are generated, configured, or supplied by an integration |
@@ -249,7 +249,7 @@ The API image starts the API by default. It also includes the IncidentIQ CLI, so
 | 0.4.0 | Complete | Read-only Kubernetes workload signals |
 | 0.4.1 | Complete | Checkpointed Pod, Deployment, and Job watches with curated reliability signals |
 | 0.4.2 | Complete | Production-oriented Alertmanager ingestion for Prometheus reliability alerts |
-| 0.5.0 | Planned | Public Node.js SDK: npm packages, trusted publishing, and external-install verification |
+| 0.5.0 | In development | Public Node.js SDK: npm packages, trusted publishing, and external-install verification |
 | 0.6.0 | Planned | Automatic incident detection and unified timeline |
 | 0.7.0 | Planned | Single-operator dashboard: services, environments, integration setup, and local configuration |
 | 0.7.1 | Planned | Dashboard investigations: incident list, evidence timeline, signal filters, and integration health |

@@ -2,17 +2,21 @@
 
 The Node.js SDK batches normalized application events and fails open: it does not throw when IncidentIQ cannot receive telemetry. Your application continues to serve its own requests.
 
-## Current packaging status
+## Install
 
-`@incidentiq/node-sdk` is currently a workspace package in this repository. It is exercised by [`apps/demo-service`](../../apps/demo-service), but it is **not yet published as an installable npm package**. Do not document `npm install @incidentiq/node-sdk` for external users until package publishing is added.
+Install the public SDK in your Node.js service:
 
-The integration shape below is the public API that will be used once the package is published. For now, use the demo service as the runnable reference or consume the package from this workspace.
+```sh
+npm install @incidentiqhq/node-sdk
+```
+
+The package needs Node.js 24 or newer. It installs the shared event-schema package automatically. You still need a reachable, self-hosted IncidentIQ API and a valid ingestion key.
 
 ## Initialise the client
 
 ```ts
 import { randomUUID } from "node:crypto";
-import { createIncidentIQ } from "@incidentiq/node-sdk";
+import { createIncidentIQ } from "@incidentiqhq/node-sdk";
 
 const incidentiq = createIncidentIQ({
   apiKey: process.env.INCIDENTIQ_API_KEY!,
@@ -64,7 +68,7 @@ The API overwrites `received_at` when it accepts an event, so that field represe
 
 ## Run the included demo
 
-From the repository root, start PostgreSQL and the API as shown in [Getting started](../getting-started.md). Then run the demo with your generated key:
+From the repository root, start PostgreSQL and the API as shown in [Getting started](../getting-started.md). Then run the included demo with your generated key:
 
 ```sh
 INCIDENTIQ_API_KEY=iiq_your_key pnpm demo-service
@@ -78,3 +82,7 @@ pnpm incidentiq events list
 ```
 
 The demo returns `503` to simulate its own database problem, while IncidentIQ independently records the evidence event.
+
+## Package release maintenance
+
+The maintainers' [npm publishing guide](../maintainers/publish-npm-packages.md) explains how the packages are built, externally installed, and released through GitHub Actions.

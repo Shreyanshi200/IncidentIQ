@@ -1,4 +1,4 @@
-import type { CorrelationResult } from "@incidentiq/correlation";
+import type { CorrelationResult } from "@incidentiqhq/correlation";
 import type { IncidentSummary } from "./database.js";
 
 function label(value: string): string {

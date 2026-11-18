@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { glob, readFile } from "node:fs/promises";
-import type { IncidentFixture } from "@incidentiq/event-schema";
-import { correlate } from "@incidentiq/correlation";
+import type { IncidentFixture } from "@incidentiqhq/event-schema";
+import { correlate } from "@incidentiqhq/correlation";
 
 test("canonical fixtures rank their expected cause", async () => {
   for await (const file of glob("demo/fixtures/*.json", { cwd: process.cwd() })) {
