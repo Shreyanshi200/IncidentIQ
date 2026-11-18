@@ -137,8 +137,15 @@ For a remote API, the producer needs the API's HTTPS URL and the `iiq_...` inges
 - A GitHub Action for deployment context that does not fail a deployment if IncidentIQ is unavailable
 - A namespace-scoped, read-only Kubernetes collector with reconnecting Pod, Event, Deployment, and Job watches
 - Alertmanager webhook ingestion for Prometheus CPU, memory, latency, and error-rate alerts
+- Automatic incident creation for new error and critical signals, with nearby service evidence saved as one timeline
 
-Not included yet: a web dashboard, automatic incident creation, cluster-wide Kubernetes collection, or a published npm SDK package. See the roadmap for what comes next.
+Not included yet: a web dashboard, incident resolution workflow, cluster-wide Kubernetes collection, or AI-generated explanations. See the roadmap for what comes next.
+
+## Automatic incidents
+
+When the API accepts an `error` or `critical` event, IncidentIQ opens an incident or adds the event to a nearby open incident for the same tenant, service, and environment. Relevant events from the preceding ten minutes are included as context, so a deployment, application error, and Kubernetes restart can be investigated together.
+
+Start with the [automatic incidents guide](docs/automatic-incidents.md) to test this locally and understand its current grouping rules.
 
 ## Try an investigation with sample data
 
@@ -198,6 +205,7 @@ Loading the same fixture more than once does not duplicate its source events. Co
 | [Node.js SDK integration](docs/integrations/node-sdk.md) | Installing the npm SDK and sending application error events |
 | [Kubernetes workload collector](docs/integrations/kubernetes-collector.md) | Installing and testing the read-only namespace collector |
 | [Prometheus Alertmanager integration](docs/integrations/alertmanager.md) | Recording firing and resolved Prometheus alerts through Alertmanager webhooks |
+| [Automatic incidents](docs/automatic-incidents.md) | Seeing how live error and critical signals open and enrich a saved evidence timeline |
 | [Event data guide](docs/event-data.md) | Understanding which fields are generated, configured, or supplied by an integration |
 
 ## Build and test the project
@@ -250,7 +258,7 @@ The API image starts the API by default. It also includes the IncidentIQ CLI, so
 | 0.4.1 | Complete | Checkpointed Pod, Deployment, and Job watches with curated reliability signals |
 | 0.4.2 | Complete | Production-oriented Alertmanager ingestion for Prometheus reliability alerts |
 | 0.5.0 | Complete | Public Node.js SDK: npm packages, trusted publishing, and external-install verification |
-| 0.6.0 | Planned | Automatic incident detection and unified timeline |
+| 0.6.0 | Complete | Automatic incident detection and unified timeline |
 | 0.7.0 | Planned | Single-operator dashboard: services, environments, integration setup, and local configuration |
 | 0.7.1 | Planned | Dashboard investigations: incident list, evidence timeline, signal filters, and integration health |
 | 0.8.0 | Planned | Evidence-bounded AI explanations and suggested next investigation steps |

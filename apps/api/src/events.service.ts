@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, UnauthorizedException } from "@nestjs/
 import { type NormalizedEvent, validateEvent } from "@incidentiqhq/event-schema";
 import { type ApiKeyRecord, ApiKeysService } from "./api-keys.service.js";
 import { DatabaseService } from "./database.js";
+import { IncidentDetectionService } from "./incident-detection.service.js";
 
 const MAX_EVENTS_PER_BATCH = 100;
 const SECRET_FIELD = /authorization|cookie|api[_-]?key|token|password|secret/i;
@@ -18,7 +19,11 @@ function redact(value: unknown): unknown {
 
 @Injectable()
 export class EventsService {
-  constructor(private readonly database: DatabaseService, private readonly apiKeys: ApiKeysService) {}
+  constructor(
+    private readonly database: DatabaseService,
+    private readonly apiKeys: ApiKeysService,
+    private readonly incidents: IncidentDetectionService
+  ) {}
 
   async authenticate(authorization: string | undefined): Promise<ApiKeyRecord> {
     const key = authorization?.replace(/^Bearer\s+/i, "");
@@ -50,12 +55,16 @@ export class EventsService {
 
     let accepted = 0;
     for (const event of events) {
-      const inserted = await this.database.db
-        .insertInto("source_events")
-        .values({ ...event, version: event.version ?? null, trace_id: event.trace_id ?? null, resource: event.resource ?? null })
-        .onConflict((conflict) => conflict.column("event_id").doNothing())
-        .returning("event_id")
-        .executeTakeFirst();
+      const inserted = await this.database.db.transaction().execute(async (transaction) => {
+        const saved = await transaction
+          .insertInto("source_events")
+          .values({ ...event, version: event.version ?? null, trace_id: event.trace_id ?? null, resource: event.resource ?? null })
+          .onConflict((conflict) => conflict.column("event_id").doNothing())
+          .returning("event_id")
+          .executeTakeFirst();
+        if (saved) await this.incidents.detect(event, transaction);
+        return Boolean(saved);
+      });
       if (inserted) accepted += 1;
     }
     return { accepted, duplicates: events.length - accepted };
