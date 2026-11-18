@@ -28,7 +28,7 @@ export function formatInvestigation(result: CorrelationResult): string {
 export function formatIncidentList(incidents: IncidentSummary[]): string {
   if (incidents.length === 0) return "No saved incidents.";
   return [
-    "ID\tSERVICE\tCAUSE\tCONFIDENCE\tSTATE",
-    ...incidents.map((incident) => `${incident.incident_id}\t${incident.service}\t${incident.leading_cause}\t${incident.confidence}\t${incident.state}`)
+    "ID\tSERVICE\tCAUSE\tCONFIDENCE\tEVENTS\tSTATE",
+    ...incidents.map((incident) => `${incident.incident_id}\t${incident.service}\t${incident.leading_cause}\t${incident.confidence}\t${incident.event_count}\t${incident.state}`)
   ].join("\n");
 }

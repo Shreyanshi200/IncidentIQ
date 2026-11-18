@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { Injectable, OnModuleDestroy } from "@nestjs/common";
 import { type Generated, Kysely, PostgresDialect } from "kysely";
 import { Pool } from "pg";
+import type { NormalizedEvent } from "@incidentiqhq/event-schema";
 
 interface SourceEventsTable {
   event_id: string;
@@ -11,13 +12,34 @@ interface SourceEventsTable {
   tenant_id: string;
   environment: string;
   service: string;
-  source: string;
+  source: NormalizedEvent["source"];
   event_type: string;
-  severity: string;
+  severity: NormalizedEvent["severity"];
   version: string | null;
   trace_id: string | null;
   resource: string | null;
   attributes: unknown;
+}
+
+interface IncidentsTable {
+  incident_id: string;
+  tenant_id: string;
+  service: string;
+  environment: string;
+  state: string;
+  started_at: string;
+  last_event_at: string;
+  event_count: number;
+  leading_cause: string;
+  confidence: string;
+  investigation: unknown;
+  updated_at: Generated<string>;
+}
+
+interface IncidentEventsTable {
+  incident_id: string;
+  event_id: string;
+  linked_at: Generated<string>;
 }
 
 interface ApiKeysTable {
@@ -30,8 +52,10 @@ interface ApiKeysTable {
   revoked_at: string | null;
 }
 
-interface Database {
+export interface Database {
   source_events: SourceEventsTable;
+  incidents: IncidentsTable;
+  incident_events: IncidentEventsTable;
   api_keys: ApiKeysTable;
 }
 

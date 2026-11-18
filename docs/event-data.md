@@ -40,6 +40,12 @@ Use a stable service name—`orders`, not a pod name or a GitHub run name. Use a
 
 These conventions keep deployment, application, and Kubernetes evidence joinable in the same incident timeline.
 
+## Automatic incident grouping
+
+The API evaluates every newly accepted event. An `error` or `critical` event opens an incident unless there is already an open incident for the same tenant, service, and environment with activity in the surrounding ten-minute window. Informational and warning events do not open incidents on their own, but they are added as evidence when they arrive near an open incident.
+
+IncidentIQ saves the ordered timeline and its evidence links. The local CLI exposes it through `pnpm incidentiq incidents list` and `pnpm incidentiq incidents explain <id>`. Current incidents remain open until a later lifecycle release; they are not automatically closed from an Alertmanager resolved event yet.
+
 ## Kubernetes workload events
 
 The Kubernetes collector produces `source: "kubernetes"` events from a configured namespace. `service` comes from the Pod label `app.kubernetes.io/name` by default; unlabeled Pods are intentionally ignored so ephemeral Pod names do not become service identities.

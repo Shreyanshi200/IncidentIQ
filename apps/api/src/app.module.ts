@@ -4,6 +4,7 @@ import { ApiKeysService } from "./api-keys.service.js";
 import { AppController } from "./app.controller.js";
 import { DatabaseService } from "./database.js";
 import { EventsService } from "./events.service.js";
+import { IncidentDetectionService } from "./incident-detection.service.js";
 
-@Module({ controllers: [AppController], providers: [DatabaseService, ApiKeysService, EventsService, AlertmanagerService] })
+@Module({ controllers: [AppController], providers: [DatabaseService, ApiKeysService, IncidentDetectionService, EventsService, AlertmanagerService] })
 export class AppModule {}

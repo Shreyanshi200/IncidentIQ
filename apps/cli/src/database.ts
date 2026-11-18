@@ -13,10 +13,13 @@ export interface StoredEvent extends NormalizedEvent {
 
 export interface IncidentSummary {
   incident_id: string;
+  tenant_id: string;
   service: string;
   environment: string;
   state: string;
   started_at: string;
+  last_event_at: string;
+  event_count: number;
   leading_cause: string;
   confidence: string;
 }
@@ -44,10 +47,13 @@ interface SourceEventsTable {
 
 interface IncidentsTable {
   incident_id: string;
+  tenant_id: string;
   service: string;
   environment: string;
   state: string;
   started_at: string;
+  last_event_at: string;
+  event_count: number;
   leading_cause: string;
   confidence: string;
   investigation: CorrelationResult;
@@ -139,32 +145,38 @@ export async function saveInvestigation(db: Kysely<Database>, result: Correlatio
     .insertInto("incidents")
     .values({
       incident_id: result.fixture_id,
+      tenant_id: affectedEvent.tenant_id,
       service: affectedEvent.service,
       environment: affectedEvent.environment,
       state: "open",
       started_at: startedAt.occurred_at,
+      last_event_at: affectedEvent.occurred_at,
+      event_count: result.timeline.length,
       leading_cause: result.leading_cause,
       confidence: result.confidence,
       investigation: result
     })
     .onConflict((conflict) => conflict.column("incident_id").doUpdateSet({
+      tenant_id: affectedEvent.tenant_id,
       service: affectedEvent.service,
       environment: affectedEvent.environment,
+      last_event_at: affectedEvent.occurred_at,
+      event_count: result.timeline.length,
       leading_cause: result.leading_cause,
       confidence: result.confidence,
       investigation: result,
       updated_at: sql`now()`
     }))
-    .returning(["incident_id", "service", "environment", "state", "started_at", "leading_cause", "confidence"])
+    .returning(["incident_id", "tenant_id", "service", "environment", "state", "started_at", "last_event_at", "event_count", "leading_cause", "confidence"])
     .executeTakeFirstOrThrow();
 }
 
 export async function listIncidents(db: Kysely<Database>): Promise<IncidentSummary[]> {
-  return db.selectFrom("incidents").select(["incident_id", "service", "environment", "state", "started_at", "leading_cause", "confidence"]).orderBy("started_at", "desc").orderBy("incident_id").execute();
+  return db.selectFrom("incidents").select(["incident_id", "tenant_id", "service", "environment", "state", "started_at", "last_event_at", "event_count", "leading_cause", "confidence"]).orderBy("started_at", "desc").orderBy("incident_id").execute();
 }
 
 export async function getIncident(db: Kysely<Database>, incidentId: string): Promise<StoredIncident | undefined> {
-  return db.selectFrom("incidents").select(["incident_id", "service", "environment", "state", "started_at", "leading_cause", "confidence", "investigation"]).where("incident_id", "=", incidentId).executeTakeFirst();
+  return db.selectFrom("incidents").select(["incident_id", "tenant_id", "service", "environment", "state", "started_at", "last_event_at", "event_count", "leading_cause", "confidence", "investigation"]).where("incident_id", "=", incidentId).executeTakeFirst();
 }
 
 export async function createIngestionKey(db: Kysely<Database>): Promise<string> {

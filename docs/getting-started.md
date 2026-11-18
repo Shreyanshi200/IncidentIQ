@@ -74,6 +74,10 @@ Choose an integration:
 - [Kubernetes collector](integrations/kubernetes-collector.md) for read-only workload failures.
 - [Prometheus Alertmanager](integrations/alertmanager.md) for production alert delivery from your existing alert rules.
 
+## 6. See automatic incident detection
+
+New `error` and `critical` events accepted by the API automatically open or enrich an incident. Follow the [automatic incidents guide](automatic-incidents.md) for a copyable local test and the current grouping rules.
+
 ## Production notes
 
 The API needs a PostgreSQL database and must be reachable over HTTPS by remote producers such as GitHub-hosted runners. Use the [production API deployment guide](deployment/api-production.md) for a repeatable Docker, reverse-proxy, backup, and upgrade setup.
