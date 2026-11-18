@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { glob, readFile } from "node:fs/promises";
-import { validateDeployment, validateEvent, validateEvidence, validateFixture, validateIncident, validateResource } from "@incidentiq/event-schema";
+import { validateDeployment, validateEvent, validateEvidence, validateFixture, validateIncident, validateResource } from "@incidentiqhq/event-schema";
 
 test("all canonical fixtures validate", async () => {
   for await (const file of glob("demo/fixtures/*.json", { cwd: process.cwd() })) {

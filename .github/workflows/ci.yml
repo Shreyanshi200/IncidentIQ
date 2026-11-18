@@ -39,3 +39,4 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm incidentiq init
       - run: pnpm test
+      - run: pnpm verify:npm-packages

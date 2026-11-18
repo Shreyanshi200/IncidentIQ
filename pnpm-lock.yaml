@@ -23,7 +23,7 @@ importers:
 
   apps/api:
     dependencies:
-      '@incidentiq/event-schema':
+      '@incidentiqhq/event-schema':
         specifier: workspace:*
         version: link:../../packages/event-schema
       '@nestjs/common':
@@ -50,10 +50,10 @@ importers:
 
   apps/cli:
     dependencies:
-      '@incidentiq/correlation':
+      '@incidentiqhq/correlation':
         specifier: workspace:*
         version: link:../../packages/correlation
-      '@incidentiq/event-schema':
+      '@incidentiqhq/event-schema':
         specifier: workspace:*
         version: link:../../packages/event-schema
       kysely:
@@ -65,28 +65,28 @@ importers:
 
   apps/demo-service:
     dependencies:
-      '@incidentiq/event-schema':
+      '@incidentiqhq/event-schema':
         specifier: workspace:*
         version: link:../../packages/event-schema
-      '@incidentiq/node-sdk':
+      '@incidentiqhq/node-sdk':
         specifier: workspace:*
         version: link:../../packages/node-sdk
 
   integrations/github-action:
     dependencies:
-      '@incidentiq/event-schema':
+      '@incidentiqhq/event-schema':
         specifier: workspace:*
         version: link:../../packages/event-schema
-      '@incidentiq/node-sdk':
+      '@incidentiqhq/node-sdk':
         specifier: workspace:*
         version: link:../../packages/node-sdk
 
   integrations/kubernetes-collector:
     dependencies:
-      '@incidentiq/event-schema':
+      '@incidentiqhq/event-schema':
         specifier: workspace:*
         version: link:../../packages/event-schema
-      '@incidentiq/node-sdk':
+      '@incidentiqhq/node-sdk':
         specifier: workspace:*
         version: link:../../packages/node-sdk
       '@kubernetes/client-node':
@@ -95,7 +95,7 @@ importers:
 
   packages/correlation:
     dependencies:
-      '@incidentiq/event-schema':
+      '@incidentiqhq/event-schema':
         specifier: workspace:*
         version: link:../event-schema
 
@@ -103,8 +103,8 @@ importers:
 
   packages/node-sdk:
     dependencies:
-      '@incidentiq/event-schema':
-        specifier: workspace:*
+      '@incidentiqhq/event-schema':
+        specifier: workspace:^
         version: link:../event-schema
 
 packages:

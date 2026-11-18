@@ -9,7 +9,7 @@ COPY packages packages
 COPY integrations integrations
 
 RUN pnpm install --frozen-lockfile
-RUN pnpm --filter @incidentiq/event-schema build && pnpm --filter @incidentiq/node-sdk build && pnpm --filter @incidentiq/kubernetes-collector build
+RUN pnpm --filter @incidentiqhq/event-schema build && pnpm --filter @incidentiqhq/node-sdk build && pnpm --filter @incidentiqhq/kubernetes-collector build
 
 USER node
 CMD ["node", "integrations/kubernetes-collector/build/src/index.js"]

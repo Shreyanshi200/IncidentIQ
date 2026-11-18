@@ -1,4 +1,4 @@
-import { createIncidentIQ } from "@incidentiq/node-sdk";
+import { createIncidentIQ } from "@incidentiqhq/node-sdk";
 import { collectOnce, deploymentSignals, eventSignals, jobSignals, PendingPodEvents, podKey, podSignals, startCheckpointedWatch } from "./collector.js";
 import { readCollectorConfig } from "./config.js";
 import { createKubernetesSource } from "./source.js";

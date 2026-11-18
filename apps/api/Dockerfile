@@ -10,7 +10,7 @@ COPY integrations integrations
 COPY infrastructure infrastructure
 
 RUN pnpm install --frozen-lockfile
-RUN pnpm --filter @incidentiq/event-schema build && pnpm --filter @incidentiq/correlation build && pnpm --filter @incidentiq/cli build && pnpm --filter @incidentiq/api build
+RUN pnpm --filter @incidentiqhq/event-schema build && pnpm --filter @incidentiqhq/correlation build && pnpm --filter @incidentiqhq/cli build && pnpm --filter @incidentiqhq/api build
 
 ENV NODE_ENV=production
 ENV PORT=3000

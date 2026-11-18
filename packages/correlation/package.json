@@ -1,5 +1,5 @@
 {
-  "name": "@incidentiq/correlation",
+  "name": "@incidentiqhq/correlation",
   "version": "0.0.4",
   "type": "module",
   "types": "./src/index.ts",
@@ -8,7 +8,7 @@
     "default": "./dist/src/index.js"
   },
   "dependencies": {
-    "@incidentiq/event-schema": "workspace:*"
+    "@incidentiqhq/event-schema": "workspace:*"
   },
   "scripts": {
     "build": "tsc --project tsconfig.json"

@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, UnauthorizedException } from "@nestjs/common";
-import { type NormalizedEvent, validateEvent } from "@incidentiq/event-schema";
+import { type NormalizedEvent, validateEvent } from "@incidentiqhq/event-schema";
 import { type ApiKeyRecord, ApiKeysService } from "./api-keys.service.js";
 import { DatabaseService } from "./database.js";
 

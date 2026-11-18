@@ -1,4 +1,4 @@
-import { createIncidentIQ } from "@incidentiq/node-sdk";
+import { createIncidentIQ } from "@incidentiqhq/node-sdk";
 import { createDemoService } from "./service.js";
 
 const apiKey = process.env.INCIDENTIQ_API_KEY;

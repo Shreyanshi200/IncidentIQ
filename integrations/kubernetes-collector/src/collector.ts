@@ -1,5 +1,5 @@
-import type { IncidentIQClient } from "@incidentiq/node-sdk";
-import type { NormalizedEvent } from "@incidentiq/event-schema";
+import type { IncidentIQClient } from "@incidentiqhq/node-sdk";
+import type { NormalizedEvent } from "@incidentiqhq/event-schema";
 import type { CollectorConfig } from "./config.js";
 import { createKubernetesSignals } from "./signals.js";
 import type { KubernetesDeployment, KubernetesJob, KubernetesPod, KubernetesWorkloadEvent } from "./types.js";

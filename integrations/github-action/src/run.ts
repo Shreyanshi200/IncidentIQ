@@ -1,4 +1,4 @@
-import { createIncidentIQ } from "@incidentiq/node-sdk";
+import { createIncidentIQ } from "@incidentiqhq/node-sdk";
 import { createDeploymentEvent } from "./event.js";
 
 function input(name: string): string {

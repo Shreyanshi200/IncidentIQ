@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { NormalizedEvent } from "@incidentiq/event-schema";
+import type { NormalizedEvent } from "@incidentiqhq/event-schema";
 import type { CollectorConfig } from "./config.js";
 import type { KubernetesDeployment, KubernetesJob, KubernetesPod, KubernetesWorkloadEvent } from "./types.js";
 

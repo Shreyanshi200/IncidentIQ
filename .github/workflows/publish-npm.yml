@@ -1,0 +1,59 @@
+name: Publish npm packages
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.6.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm verify:npm-packages
+      - id: packages
+        run: |
+          previous_tag="$(git tag --sort=-version:refname | grep -vx "$GITHUB_REF_NAME" | head -n 1 || true)"
+          if [ -z "$previous_tag" ] || ! git diff --quiet "$previous_tag" HEAD -- packages/event-schema packages/node-sdk; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.packages.outputs.publish == 'true'
+        run: mkdir .npm-packages
+      - if: steps.packages.outputs.publish == 'true'
+        run: pnpm --dir packages/event-schema pack --pack-destination ../../.npm-packages
+      - if: steps.packages.outputs.publish == 'true'
+        run: pnpm --dir packages/node-sdk pack --pack-destination ../../.npm-packages
+      - if: steps.packages.outputs.publish == 'true'
+        run: |
+          package="$(node -p 'const manifest = require("./packages/event-schema/package.json"); `${manifest.name}@${manifest.version}`')"
+          if npm view "$package" version >/dev/null 2>&1; then
+            echo "$package is already published."
+          else
+            npm publish .npm-packages/incidentiqhq-event-schema-*.tgz --access public
+          fi
+      - if: steps.packages.outputs.publish == 'true'
+        run: |
+          package="$(node -p 'const manifest = require("./packages/node-sdk/package.json"); `${manifest.name}@${manifest.version}`')"
+          if npm view "$package" version >/dev/null 2>&1; then
+            echo "$package is already published."
+          else
+            npm publish .npm-packages/incidentiqhq-node-sdk-*.tgz --access public
+          fi
