@@ -78,6 +78,10 @@ Choose an integration:
 
 New `error` and `critical` events accepted by the API automatically open or enrich an incident. Follow the [automatic incidents guide](automatic-incidents.md) for a copyable local test and the current grouping rules.
 
+## 7. Run the local dashboard
+
+The dashboard is a separate browser application. It requires its own read-only key, not the ingestion key used by integrations. Follow the [dashboard guide](dashboard.md) to create the key and open the local UI.
+
 ## Production notes
 
 The API needs a PostgreSQL database and must be reachable over HTTPS by remote producers such as GitHub-hosted runners. Use the [production API deployment guide](deployment/api-production.md) for a repeatable Docker, reverse-proxy, backup, and upgrade setup.

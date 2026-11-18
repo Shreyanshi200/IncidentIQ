@@ -179,9 +179,13 @@ export async function getIncident(db: Kysely<Database>, incidentId: string): Pro
   return db.selectFrom("incidents").select(["incident_id", "tenant_id", "service", "environment", "state", "started_at", "last_event_at", "event_count", "leading_cause", "confidence", "investigation"]).where("incident_id", "=", incidentId).executeTakeFirst();
 }
 
-export async function createIngestionKey(db: Kysely<Database>): Promise<string> {
+export async function createApiKey(db: Kysely<Database>, scope: "ingest" | "read"): Promise<string> {
   const key = `iiq_${randomBytes(24).toString("base64url")}`;
   const keyHash = createHash("sha256").update(key).digest("hex");
-  await db.insertInto("api_keys").values({ key_id: randomUUID(), key_hash: keyHash, visible_prefix: key.slice(0, 12), scope: "ingest", tenant_id: "local", revoked_at: null }).execute();
+  await db.insertInto("api_keys").values({ key_id: randomUUID(), key_hash: keyHash, visible_prefix: key.slice(0, 12), scope, tenant_id: "local", revoked_at: null }).execute();
   return key;
+}
+
+export function createIngestionKey(db: Kysely<Database>): Promise<string> {
+  return createApiKey(db, "ingest");
 }

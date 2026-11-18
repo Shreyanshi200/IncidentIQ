@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { correlate } from "@incidentiqhq/correlation";
 import { SCHEMA_VERSION, type IncidentFixture, validateFixture } from "@incidentiqhq/event-schema";
-import { applyMigrations, createDatabase, createIngestionKey, getIncident, listEvents, listIncidents, loadFixture, saveInvestigation } from "./database.js";
+import { applyMigrations, createApiKey, createDatabase, getIncident, listEvents, listIncidents, loadFixture, saveInvestigation } from "./database.js";
 import { formatIncidentList, formatInvestigation } from "./format.js";
 
 const [command, subcommand, target, option, format] = process.argv.slice(2);
@@ -29,7 +29,7 @@ async function readFixture(file: string): Promise<IncidentFixture> {
 
 try {
   if (command === "version") {
-    console.log(`incidentiq 0.6.0 (schema ${SCHEMA_VERSION})`);
+    console.log(`incidentiq 0.7.0 (schema ${SCHEMA_VERSION})`);
   } else if (command === "api" && subcommand === "start") {
     const api = spawn(process.execPath, [fileURLToPath(new URL("../../../api/dist/src/main.js", import.meta.url))], { stdio: "inherit", env: process.env });
     await new Promise<void>((resolveStart, rejectStart) => api.once("exit", (code) => code === 0 ? resolveStart() : rejectStart(new Error(`API exited with code ${code}`))));
@@ -37,8 +37,8 @@ try {
     const response = await fetch(`${process.env.INCIDENTIQ_API_URL ?? "http://localhost:3000"}/v1/health`);
     if (!response.ok) throw new Error(`API health check failed: ${response.status}`);
     console.log(JSON.stringify(await response.json()));
-  } else if (command === "keys" && subcommand === "create" && target === "--scope" && option === "ingest") {
-    await withDatabase(async (pool) => console.log(`Ingestion API key (shown once): ${await createIngestionKey(pool)}`));
+  } else if (command === "keys" && subcommand === "create" && target === "--scope" && (option === "ingest" || option === "read")) {
+    await withDatabase(async (pool) => console.log(`${option === "read" ? "Read" : "Ingestion"} API key (shown once): ${await createApiKey(pool, option)}`));
   } else if (command === "init") {
     await withDatabase(async () => console.log("PostgreSQL is ready and migrations are applied."));
   } else if (command === "fixture" && subcommand === "validate" && target) {
@@ -75,7 +75,7 @@ try {
       console.log(JSON.stringify(incident.investigation, null, 2));
     });
   } else {
-    throw new Error("Usage: incidentiq version | api start | api health | keys create --scope ingest | init | fixture validate <file> | fixture load <file> | correlate <fixture> [--save] | events list | incidents list | incidents explain <id> | incidents export <id> --format json");
+    throw new Error("Usage: incidentiq version | api start | api health | keys create --scope ingest|read | init | fixture validate <file> | fixture load <file> | correlate <fixture> [--save] | events list | incidents list | incidents explain <id> | incidents export <id> --format json");
   }
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error));

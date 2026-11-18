@@ -17,7 +17,7 @@ When a production service breaks, the useful clues are usually scattered: an err
 
 ## How IncidentIQ helps
 
-IncidentIQ accepts those operational signals, stores them safely in PostgreSQL, removes configured secret fields, and lets you inspect a time-ordered evidence trail. Today you can send application events, GitHub deployment context, read-only Kubernetes workload-failure signals, and Prometheus alerts delivered by Alertmanager. The local CLI is the investigation interface while the web dashboard is planned.
+IncidentIQ accepts those operational signals, stores them safely in PostgreSQL, removes configured secret fields, and lets you inspect a time-ordered evidence trail. Today you can send application events, GitHub deployment context, read-only Kubernetes workload-failure signals, and Prometheus alerts delivered by Alertmanager. The CLI investigates individual incidents, while the local dashboard shows coverage across services, environments, and integrations.
 
 ## Start locally
 
@@ -138,8 +138,27 @@ For a remote API, the producer needs the API's HTTPS URL and the `iiq_...` inges
 - A namespace-scoped, read-only Kubernetes collector with reconnecting Pod, Event, Deployment, and Job watches
 - Alertmanager webhook ingestion for Prometheus CPU, memory, latency, and error-rate alerts
 - Automatic incident creation for new error and critical signals, with nearby service evidence saved as one timeline
+- A separate local React dashboard for service, environment, and integration coverage
 
-Not included yet: a web dashboard, incident resolution workflow, cluster-wide Kubernetes collection, or AI-generated explanations. See the roadmap for what comes next.
+Not included yet: dashboard incident investigations, incident resolution workflow, cluster-wide Kubernetes collection, or AI-generated explanations. See the roadmap for what comes next.
+
+## Local dashboard
+
+The dashboard is a separate app in `apps/dashboard`; the API remains responsible only for authenticated data. A read-only `iiq_...` key starts an eight-hour session backed by an `HttpOnly`, same-site cookie. The raw key is never stored by the dashboard, and an ingestion key cannot open it.
+
+Follow the [dashboard guide](docs/dashboard.md) to start it locally.
+
+Create its separate read-only key:
+
+```sh
+pnpm incidentiq keys create --scope read
+```
+
+Then start the browser app:
+
+```sh
+pnpm dashboard
+```
 
 ## Automatic incidents
 
@@ -206,6 +225,7 @@ Loading the same fixture more than once does not duplicate its source events. Co
 | [Kubernetes workload collector](docs/integrations/kubernetes-collector.md) | Installing and testing the read-only namespace collector |
 | [Prometheus Alertmanager integration](docs/integrations/alertmanager.md) | Recording firing and resolved Prometheus alerts through Alertmanager webhooks |
 | [Automatic incidents](docs/automatic-incidents.md) | Seeing how live error and critical signals open and enrich a saved evidence timeline |
+| [Dashboard](docs/dashboard.md) | Running the local service, environment, and integration coverage view safely |
 | [Event data guide](docs/event-data.md) | Understanding which fields are generated, configured, or supplied by an integration |
 
 ## Build and test the project
@@ -259,7 +279,7 @@ The API image starts the API by default. It also includes the IncidentIQ CLI, so
 | 0.4.2 | Complete | Production-oriented Alertmanager ingestion for Prometheus reliability alerts |
 | 0.5.0 | Complete | Public Node.js SDK: npm packages, trusted publishing, and external-install verification |
 | 0.6.0 | Complete | Automatic incident detection and unified timeline |
-| 0.7.0 | Planned | Single-operator dashboard: services, environments, integration setup, and local configuration |
+| 0.7.0 | Complete | Single-operator dashboard: services, environments, integration setup, and local configuration |
 | 0.7.1 | Planned | Dashboard investigations: incident list, evidence timeline, signal filters, and integration health |
 | 0.8.0 | Planned | Evidence-bounded AI explanations and suggested next investigation steps |
 | 0.8.1 | Planned | Operational polish: safer API-key handling, retention, and cost controls |
