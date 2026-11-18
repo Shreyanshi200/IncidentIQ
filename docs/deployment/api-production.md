@@ -9,6 +9,8 @@ This is the appropriate production shape for the current single-operator MVP. It
 - a released, immutable API image from GitHub Container Registry;
 - a PostgreSQL database reachable only from the API host or private network;
 - a Linux host with Docker Compose v2 and a reverse proxy such as Nginx;
+- a trusted operator workstation with Git, Node.js 24, pnpm 11.6, and `rsync` for building and uploading the dashboard;
+- SSH or equivalent management access restricted to the operator's IP or private network;
 - a DNS record, for example `incidentiq.example.com`, pointing to that host; and
 - a certificate for that DNS name.
 
@@ -47,13 +49,40 @@ cp docs/examples/api-production.env.example ~/incidentiq-production/.env
 Edit `~/incidentiq-production/.env`. Replace all placeholders:
 
 - `INCIDENTIQ_API_IMAGE` — an immutable `sha-<commit-sha>` tag from a successful merge to `main`;
-- `DATABASE_URL` — the real PostgreSQL connection string, including the provider's TLS settings; and
+- `DATABASE_URL` — the real PostgreSQL connection string, including the provider's TLS settings;
+- `INCIDENTIQ_SESSION_SECRET` — at least 32 random bytes used to sign short-lived dashboard sessions; and
 - `PORT` — normally leave this as `3000`.
 
 Keep `.env` readable only by the deployment operator. It contains the database password.
 
+Generate the server-only dashboard session secret on a trusted machine:
+
+```sh
+openssl rand -base64 48
+```
+
+Copy the printed value after `INCIDENTIQ_SESSION_SECRET=` in `~/incidentiq-production/.env`. This value does not start with `iiq_`, is never pasted into the dashboard, and must remain stable across API restarts. Rotating it immediately signs out every dashboard session.
+
+Do not confuse the server secret with the API keys created later:
+
+| Credential | Purpose | Location |
+| --- | --- | --- |
+| `INCIDENTIQ_SESSION_SECRET` | Signs eight-hour browser session cookies | API server `.env` or managed secret store |
+| Ingestion key (`iiq_...`) | Lets an integration send evidence | Integration secret store; IncidentIQ keeps only its hash |
+| Read key (`iiq_...`) | Lets an operator open one tenant's dashboard | Operator password manager; IncidentIQ keeps only its hash |
+
 ```sh
 chmod 600 ~/incidentiq-production/.env
+```
+
+Validate the Compose file and required variables without printing their secret values:
+
+```sh
+cd ~/incidentiq-production
+```
+
+```sh
+docker compose config --quiet
 ```
 
 If the GHCR image is private, authenticate Docker with a GitHub token that has `read:packages` permission before pulling it. Public images do not need this step.
@@ -86,9 +115,9 @@ PostgreSQL is ready and migrations are applied.
 
 The command records each applied SQL migration in `schema_migrations`; running it again is safe. Take a database backup before applying a new application version.
 
-## 3. Create and store an ingestion key
+## 3. Create and store API keys
 
-Create one ingestion key for your integrations:
+Create an ingestion key for each independent producer or secret boundary. The following command creates one key; repeat it when GitHub Actions, Kubernetes, Alertmanager, or an application should not share credentials:
 
 ```sh
 docker compose run --rm --no-deps --entrypoint node api apps/cli/dist/src/index.js keys create --scope ingest
@@ -96,7 +125,15 @@ docker compose run --rm --no-deps --entrypoint node api apps/cli/dist/src/index.
 
 The raw `iiq_...` key is printed once. Save it immediately in your secret manager, then add it as a secret in GitHub Actions, Kubernetes, or Alertmanager. IncidentIQ stores only its hash.
 
-Do not put this key in application source code, a committed `.env` file, or a shell history command.
+Create a separate read key for the dashboard operator:
+
+```sh
+docker compose run --rm --no-deps --entrypoint node api apps/cli/dist/src/index.js keys create --scope read
+```
+
+Save this second `iiq_...` value in the operator's password manager. Do not give it to an integration. Both keys belong to the current `local` tenant, so the dashboard only returns that tenant's data.
+
+Do not put any key in application source code, a committed `.env` file, or a shell history command.
 
 ## 4. Start the API and verify it locally
 
@@ -120,13 +157,69 @@ Expected output:
 
 The compose configuration binds port `3000` only to `127.0.0.1`. It is therefore reachable by a reverse proxy on the same host but not directly from the internet.
 
-## 5. Put HTTPS in front of the API
+## 5. Prepare DNS and HTTPS
 
-Create DNS for your chosen hostname, obtain a trusted TLS certificate, then configure your reverse proxy to forward requests to the loopback-bound container.
+Create DNS for your chosen hostname and obtain a trusted TLS certificate. Keep port `3000` private; the reverse proxy in the next step is the only public entry point.
 
-For Nginx, the relevant virtual-host content is:
+Certificate setup depends on the host. If you use Let's Encrypt HTTP validation, port 80 must be reachable while the certificate is issued and can then redirect to HTTPS. DNS validation does not require public port 80. Restrict SSH to the operator's IP or private management network rather than exposing it globally.
+
+Your platform may provide an ingress controller, load balancer, or managed HTTPS endpoint instead of Nginx. The required properties are:
+
+- public traffic reaches `https://incidentiq.example.com` on port 443;
+- `/v1` requests reach the private API service;
+- dashboard files and `/v1` use the same HTTPS origin;
+- port 3000 is not publicly reachable; and
+- PostgreSQL accepts connections only from IncidentIQ's private network.
+
+## 6. Deploy the dashboard
+
+On the trusted operator workstation, clone the repository if it is not already available:
+
+```sh
+git clone https://github.com/Shreyanshi200/IncidentIQ.git
+```
+
+```sh
+cd IncidentIQ
+```
+
+Use the same released repository version as the API:
+
+```sh
+git checkout v<released-version>
+```
+
+Install the locked dependencies and build the static files:
+
+```sh
+pnpm install --frozen-lockfile
+```
+
+```sh
+pnpm --filter @incidentiqhq/dashboard build
+```
+
+On the production host, create a directory owned by the current deployment account and readable by Nginx:
+
+```sh
+sudo install -d -o "$(id -un)" -g "$(id -gn)" -m 0755 /var/www/incidentiq
+```
+
+From the operator workstation, upload only the generated static files. Replace `operator` and the hostname with the real SSH destination:
+
+```sh
+rsync --archive --delete apps/dashboard/dist/ operator@incidentiq.example.com:/var/www/incidentiq/
+```
+
+Configure Nginx to serve the dashboard and forward only `/v1` requests to the loopback-bound API:
 
 ```nginx
+server {
+    listen 80;
+    server_name incidentiq.example.com;
+    return 301 https://$host$request_uri;
+}
+
 server {
     listen 443 ssl http2;
     server_name incidentiq.example.com;
@@ -134,55 +227,102 @@ server {
     ssl_certificate     /etc/letsencrypt/live/incidentiq.example.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/incidentiq.example.com/privkey.pem;
 
-    location / {
+    root /var/www/incidentiq;
+    index index.html;
+
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy no-referrer always;
+    add_header X-Frame-Options DENY always;
+
+    location /v1/ {
         proxy_pass http://127.0.0.1:3000;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
 }
 ```
 
-Your platform may provide an ingress controller, load balancer, or managed HTTPS endpoint instead of Nginx. The important properties are the same:
+The certificate paths above are the usual Let's Encrypt paths. Replace them when your provider or certificate manager stores the files elsewhere.
 
-- public traffic reaches `https://incidentiq.example.com` on port 443;
-- the proxy forwards to `http://127.0.0.1:3000` or the equivalent private service address;
-- port 3000 is not publicly reachable; and
-- PostgreSQL accepts connections only from IncidentIQ's private network.
+Validate the configuration before reloading Nginx:
 
-Verify the public endpoint after the proxy and certificate are ready:
+```sh
+sudo nginx -t
+```
+
+```sh
+sudo systemctl reload nginx
+```
+
+Verify both routes through the public hostname:
 
 ```sh
 curl --fail --silent --show-error https://incidentiq.example.com/v1/health
 ```
 
-Use this complete HTTPS base URL as `INCIDENTIQ_API_URL` in the GitHub Actions, Kubernetes, and Alertmanager integration guides. The Alertmanager receiver URL must include `/v1/integrations/alertmanager`.
+```sh
+curl --fail --silent --show-error https://incidentiq.example.com/ | grep -q '<title>IncidentIQ</title>'
+```
 
-## 6. Connect integrations
+Open `https://incidentiq.example.com` in a browser, paste the read key created in step 3, refresh the page once, then select **Sign out**. The raw read key is sent once and replaced by an eight-hour `HttpOnly`, `Secure`, `SameSite=Strict` cookie. The stable session secret keeps valid sessions working across API restarts.
 
-All current integrations authenticate with the ingestion key created above.
+## 7. Connect integrations
+
+All current integrations authenticate with an ingestion key created above.
 
 | Producer | Configure with |
 | --- | --- |
 | GitHub Actions | Repository secret `INCIDENTIQ_API_KEY` and repository variable `INCIDENTIQ_API_URL=https://incidentiq.example.com` |
 | Kubernetes collector | Kubernetes Secret named `incidentiq` with `api-key`, plus `INCIDENTIQ_API_URL=https://incidentiq.example.com` |
 | Alertmanager | Receiver URL `https://incidentiq.example.com/v1/integrations/alertmanager` and an `Authorization: Bearer iiq_...` header |
-| Node.js SDK | `INCIDENTIQ_API_URL=https://incidentiq.example.com` and its ingestion key after the SDK has been published to npm |
+| Node.js SDK | `INCIDENTIQ_API_URL=https://incidentiq.example.com` and its ingestion key |
 
 Follow the individual integration guides for labels, RBAC, and test commands.
+
+Use the complete HTTPS base URL as `INCIDENTIQ_API_URL`. The Alertmanager receiver URL must additionally include `/v1/integrations/alertmanager`.
+
+After sending a real or test event, verify storage from the production directory without installing Node.js on the host:
+
+```sh
+docker compose run --rm --no-deps --entrypoint node api apps/cli/dist/src/index.js events list
+```
 
 ## Operations checklist
 
 Before accepting production events, verify all of the following:
 
 - [ ] The API health endpoint succeeds through the public HTTPS hostname.
+- [ ] The dashboard loads through the same hostname, accepts the read key, survives a page refresh, and signs out cleanly.
 - [ ] The database is private, encrypted in transit, and backed up.
-- [ ] The `.env` file and the ingestion key are held only in approved secret storage.
-- [ ] The host firewall permits public port 443 only; port 3000 is loopback-only.
+- [ ] The `.env` file, stable session secret, ingestion keys, and read key are held only in approved secret storage.
+- [ ] The host firewall permits public 443, optional 80 for certificate validation and redirect, and restricted SSH or management access; port 3000 is loopback-only.
 - [ ] You deployed an immutable image tag, not `latest`.
 - [ ] At least one producer has sent an event and `events list` (or direct database inspection) confirms it was stored.
 - [ ] The GitHub Actions, Kubernetes, and Alertmanager values use the HTTPS hostname rather than a temporary development tunnel.
+
+## Hosting troubleshooting
+
+If the image does not pull, first verify that the owner is lowercase, the `sha-...` tag matches a successful **Publish images** workflow run, and Docker is logged in when the GHCR package is private:
+
+```sh
+docker compose pull api
+```
+
+If the API does not become healthy, inspect its logs. Database reachability, TLS settings in `DATABASE_URL`, and unapplied migrations are the usual causes:
+
+```sh
+docker compose logs --tail=100 api
+```
+
+If the hostname returns an API 404 instead of the dashboard, Nginx is still proxying `/` to port 3000. Use the split `location /v1/` and static `location /` configuration from step 6, confirm the files exist in `/var/www/incidentiq`, then validate and reload Nginx.
+
+If the dashboard rejects a key, create it with `--scope read`; an ingestion key is intentionally refused. If refresh immediately signs the operator out after an API restart, confirm that the same `INCIDENTIQ_SESSION_SECRET` is still loaded by the container.
 
 ## Backups and recovery
 
@@ -219,12 +359,19 @@ docker compose run --rm --no-deps --entrypoint node api apps/cli/dist/src/index.
 docker compose up -d api
 ```
 
+5. Check out the same release on the operator workstation, rebuild the dashboard, and repeat the upload command from step 6.
+6. Verify both the API and dashboard:
+
 ```sh
 curl --fail --silent --show-error https://incidentiq.example.com/v1/health
 ```
 
-If the new API fails before migrations have made incompatible changes, restore the previous image tag and restart it. If a migration has run, restore the database backup instead of assuming a downgrade is safe.
+```sh
+curl --fail --silent --show-error https://incidentiq.example.com/ | grep -q '<title>IncidentIQ</title>'
+```
+
+If the new API fails before migrations have made incompatible changes, restore the previous image tag and restart it. Rebuild and upload the dashboard from that same previous release. If a migration has run, restore the database backup instead of assuming a downgrade is safe.
 
 ## Current production limits
 
-The current release deliberately keeps operations simple. It has one API process and PostgreSQL, but not yet API-key rotation tooling, rate limiting, a durable ingestion queue, active-active replicas, or a dashboard. Plan capacity and incident response around those boundaries until the relevant roadmap versions land.
+The current release deliberately keeps operations simple. It has one API process and PostgreSQL, but not yet API-key rotation tooling, rate limiting, a durable ingestion queue, active-active replicas, or bundled dashboard hosting. The dashboard is a separate static build; see the [dashboard guide](../dashboard.md) for its local run and static-build instructions. Plan capacity and incident response around those boundaries until the relevant roadmap versions land.

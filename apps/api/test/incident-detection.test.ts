@@ -13,7 +13,8 @@ test("error signals create one incident with nearby timeline evidence", { skip: 
   await app.listen(0, "127.0.0.1");
   try {
     const baseUrl = `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}`;
-    const apiKey = (await app.get(ApiKeysService).create("ingest")).key;
+    const tenant = `test-${randomUUID()}`;
+    const apiKey = (await app.get(ApiKeysService).create("ingest", tenant)).key;
     const suffix = randomUUID();
     const service = `orders-${suffix}`;
     const request = await fetch(`${baseUrl}/v1/events/batch`, {
@@ -24,7 +25,7 @@ test("error signals create one incident with nearby timeline evidence", { skip: 
           {
             event_id: `deploy-${suffix}`,
             occurred_at: "2026-11-18T10:00:00.000Z",
-            tenant_id: "local",
+            tenant_id: tenant,
             environment: "test",
             service,
             source: "github_actions",
@@ -36,7 +37,7 @@ test("error signals create one incident with nearby timeline evidence", { skip: 
           {
             event_id: `error-${suffix}`,
             occurred_at: "2026-11-18T10:02:00.000Z",
-            tenant_id: "local",
+            tenant_id: tenant,
             environment: "test",
             service,
             source: "node_sdk",
@@ -48,7 +49,7 @@ test("error signals create one incident with nearby timeline evidence", { skip: 
           {
             event_id: `restart-${suffix}`,
             occurred_at: "2026-11-18T10:03:00.000Z",
-            tenant_id: "local",
+            tenant_id: tenant,
             environment: "test",
             service,
             source: "kubernetes",
@@ -84,7 +85,8 @@ test("informational evidence does not open an incident", { skip: !databaseUrl },
   await app.listen(0, "127.0.0.1");
   try {
     const baseUrl = `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}`;
-    const apiKey = (await app.get(ApiKeysService).create("ingest")).key;
+    const tenant = `test-${randomUUID()}`;
+    const apiKey = (await app.get(ApiKeysService).create("ingest", tenant)).key;
     const service = `catalog-${randomUUID()}`;
     const request = await fetch(`${baseUrl}/v1/events/batch`, {
       method: "POST",
@@ -93,7 +95,7 @@ test("informational evidence does not open an incident", { skip: !databaseUrl },
         events: [{
           event_id: `deploy-${service}`,
           occurred_at: "2026-11-18T10:00:00.000Z",
-          tenant_id: "local",
+          tenant_id: tenant,
           environment: "test",
           service,
           source: "github_actions",

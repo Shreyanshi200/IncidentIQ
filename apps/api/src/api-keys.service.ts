@@ -3,6 +3,7 @@ import { Injectable } from "@nestjs/common";
 import { DatabaseService } from "./database.js";
 
 export interface ApiKeyRecord {
+  key_id: string;
   tenant_id: string;
   scope: string;
 }
@@ -18,8 +19,17 @@ export class ApiKeysService {
   async findActive(key: string): Promise<ApiKeyRecord | undefined> {
     return this.database.db
       .selectFrom("api_keys")
-      .select(["tenant_id", "scope"])
+      .select(["key_id", "tenant_id", "scope"])
       .where("key_hash", "=", hashApiKey(key))
+      .where("revoked_at", "is", null)
+      .executeTakeFirst();
+  }
+
+  async findActiveById(keyId: string): Promise<ApiKeyRecord | undefined> {
+    return this.database.db
+      .selectFrom("api_keys")
+      .select(["key_id", "tenant_id", "scope"])
+      .where("key_id", "=", keyId)
       .where("revoked_at", "is", null)
       .executeTakeFirst();
   }

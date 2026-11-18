@@ -6,10 +6,11 @@ import { promisify } from "node:util";
 
 const run = promisify(execFile);
 const cli = fileURLToPath(new URL("../src/index.js", import.meta.url));
+const databaseUrl = process.env.DATABASE_URL;
 
 test("version reports the CLI and schema versions", async () => {
   const { stdout } = await run(process.execPath, [cli, "version"]);
-  assert.match(stdout, /incidentiq 0\.6\.0 \(schema 0\.0\.6\)/);
+  assert.match(stdout, /incidentiq 0\.7\.0 \(schema 0\.0\.6\)/);
 });
 
 test("correlate ranks the seeded cause", async () => {
@@ -21,4 +22,9 @@ test("correlate ranks the seeded cause", async () => {
 test("fixture validate accepts a canonical fixture", async () => {
   const { stdout } = await run(process.execPath, [cli, "fixture", "validate", "demo/fixtures/deployment-regression.json"]);
   assert.match(stdout, /Valid fixture: deployment-regression/);
+});
+
+test("keys create can create a read key", { skip: !databaseUrl }, async () => {
+  const { stdout } = await run(process.execPath, [cli, "keys", "create", "--scope", "read"], { env: process.env });
+  assert.match(stdout, /Read API key \(shown once\): iiq_/);
 });

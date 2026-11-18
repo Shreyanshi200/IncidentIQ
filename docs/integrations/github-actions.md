@@ -15,7 +15,7 @@ For a temporary local test, a Cloudflare quick tunnel can provide the HTTPS URL.
 
 ## Add the Action to a deployment workflow
 
-For an Action installed from this repository, pin the complete commit SHA until a released version tag is available:
+For an Action installed from this repository, pin the complete commit SHA from the release you tested:
 
 ```yaml
 - name: Record deployment context in IncidentIQ
@@ -30,7 +30,7 @@ For an Action installed from this repository, pin the complete commit SHA until 
     deployment-status: ${{ job.status }}
 ```
 
-After `v0.3.0` is released, replace the commit SHA with `v0.3.0`. Pinning a full commit SHA is safest for production workflows.
+A release tag is easier to read, but a complete commit SHA cannot move and is therefore the safest production reference. Dependabot can be configured to propose Action reference updates when a newer release is available.
 
 The Action needs a checkout only when you run the local copy inside this repository:
 
