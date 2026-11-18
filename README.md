@@ -17,7 +17,7 @@ When a production service breaks, the useful clues are usually scattered: an err
 
 ## How IncidentIQ helps
 
-IncidentIQ accepts those operational signals, stores them safely in PostgreSQL, removes configured secret fields, and lets you inspect a time-ordered evidence trail. Today you can send application events, GitHub deployment context, and read-only Kubernetes workload-failure signals. The local CLI is the investigation interface while the web dashboard is planned.
+IncidentIQ accepts those operational signals, stores them safely in PostgreSQL, removes configured secret fields, and lets you inspect a time-ordered evidence trail. Today you can send application events, GitHub deployment context, read-only Kubernetes workload-failure signals, and Prometheus alerts delivered by Alertmanager. The local CLI is the investigation interface while the web dashboard is planned.
 
 ## Start locally
 
@@ -122,7 +122,8 @@ Choose the type of evidence you want to connect first:
 | --- | --- |
 | An application error from a Node.js service | [Node.js SDK integration](docs/integrations/node-sdk.md) |
 | A deployment from a GitHub Actions workflow | [GitHub Actions integration](docs/integrations/github-actions.md) |
-| Pod restarts, crashes, or scheduling failures in one Kubernetes namespace | [Kubernetes workload collector](docs/integrations/kubernetes-collector.md) |
+| Pod, Deployment, or Job failures in one Kubernetes namespace | [Kubernetes workload collector](docs/integrations/kubernetes-collector.md) |
+| Prometheus reliability alerts from Alertmanager | [Prometheus Alertmanager integration](docs/integrations/alertmanager.md) |
 | Sample data to explore investigation and correlation output | [Load a fixture](#try-an-investigation-with-sample-data) |
 
 For a remote API, the producer needs the API's HTTPS URL and the `iiq_...` ingestion key created above. Keep both in its environment or secret manager—not in source code.
@@ -135,6 +136,7 @@ For a remote API, the producer needs the API's HTTPS URL and the `iiq_...` inges
 - A fail-open Node.js SDK implementation for application events
 - A GitHub Action for deployment context that does not fail a deployment if IncidentIQ is unavailable
 - A namespace-scoped, read-only Kubernetes collector with reconnecting Pod, Event, Deployment, and Job watches
+- Alertmanager webhook ingestion for Prometheus CPU, memory, latency, and error-rate alerts
 
 Not included yet: a web dashboard, automatic incident creation, cluster-wide Kubernetes collection, or a published npm SDK package. See the roadmap for what comes next.
 
@@ -191,9 +193,11 @@ Loading the same fixture more than once does not duplicate its source events. Co
 | Guide | Use it for |
 | --- | --- |
 | [Getting started](docs/getting-started.md) | A more detailed self-hosted setup, key creation, and troubleshooting |
+| [Production API deployment](docs/deployment/api-production.md) | Running the API behind HTTPS with PostgreSQL, backups, and an upgrade procedure |
 | [GitHub Actions integration](docs/integrations/github-actions.md) | Recording real deployment metadata from a GitHub workflow |
 | [Node.js SDK integration](docs/integrations/node-sdk.md) | Adding application error events and understanding current SDK packaging |
 | [Kubernetes workload collector](docs/integrations/kubernetes-collector.md) | Installing and testing the read-only namespace collector |
+| [Prometheus Alertmanager integration](docs/integrations/alertmanager.md) | Recording firing and resolved Prometheus alerts through Alertmanager webhooks |
 | [Event data guide](docs/event-data.md) | Understanding which fields are generated, configured, or supplied by an integration |
 
 ## Build and test the project
@@ -229,7 +233,7 @@ docker pull ghcr.io/<owner>/incidentiq-api:sha-<commit-sha>
 docker pull ghcr.io/<owner>/incidentiq-kubernetes-collector:sha-<commit-sha>
 ```
 
-The API image runs the API only. At this stage, use a source checkout and the CLI for database setup, creating ingestion keys, and inspecting events.
+The API image starts the API by default. It also includes the IncidentIQ CLI, so an operator can apply migrations and create ingestion keys without installing Node.js on the server. See [Production API deployment](docs/deployment/api-production.md) for the complete setup.
 
 ## Release roadmap
 
@@ -243,13 +247,14 @@ The API image runs the API only. At this stage, use a source checkout and the CL
 | 0.2.0 | Complete | Safe Node.js SDK implementation with batched, fail-open export |
 | 0.3.0 | Complete | GitHub Actions deployment context |
 | 0.4.0 | Complete | Read-only Kubernetes workload signals |
-| 0.4.1 | In development | Checkpointed Pod, Deployment, and Job watches with curated reliability signals |
-| 0.4.2 | Planned | Read-only Prometheus CPU, memory, latency, and error-rate evidence |
-| 0.5.0 | Planned | Automatic incident detection and unified timeline |
-| 0.6.0 | Planned | Single-operator dashboard: services, environments, integration setup, and local configuration |
-| 0.6.1 | Planned | Dashboard investigations: incident list, evidence timeline, signal filters, and integration health |
-| 0.7.0 | Planned | Evidence-bounded AI explanations and suggested next investigation steps |
-| 0.8.0 | Planned | Operational polish: retention, safer API-key handling, and cost controls |
+| 0.4.1 | Complete | Checkpointed Pod, Deployment, and Job watches with curated reliability signals |
+| 0.4.2 | Complete | Production-oriented Alertmanager ingestion for Prometheus reliability alerts |
+| 0.5.0 | Planned | Public Node.js SDK: npm packages, trusted publishing, and external-install verification |
+| 0.6.0 | Planned | Automatic incident detection and unified timeline |
+| 0.7.0 | Planned | Single-operator dashboard: services, environments, integration setup, and local configuration |
+| 0.7.1 | Planned | Dashboard investigations: incident list, evidence timeline, signal filters, and integration health |
+| 0.8.0 | Planned | Evidence-bounded AI explanations and suggested next investigation steps |
+| 0.8.1 | Planned | Operational polish: safer API-key handling, retention, and cost controls |
 | 0.9.0 | Planned | ClickHouse for scalable historical event storage and investigations |
 | 0.9.1 | Planned | Kafka-based streaming ingestion for high-volume, near-real-time evidence |
 | 1.0.0 | Planned | Stable single-operator MVP with clear setup, reliable integrations, and documented operating guidance |

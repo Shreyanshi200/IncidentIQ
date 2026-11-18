@@ -1,0 +1,18 @@
+route:
+  receiver: incidentiq
+  group_by: [alertname, service, namespace]
+  group_wait: 0s
+  group_interval: 1m
+  repeat_interval: 1h
+
+receivers:
+  - name: incidentiq
+    webhook_configs:
+      - url: __INCIDENTIQ_WEBHOOK_URL__
+        send_resolved: true
+        max_alerts: 100
+        timeout: 10s
+        http_config:
+          authorization:
+            type: Bearer
+            credentials: __INCIDENTIQ_API_KEY__

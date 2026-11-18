@@ -47,3 +47,9 @@ The Kubernetes collector produces `source: "kubernetes"` events from a configure
 `resource` identifies the affected workload as `pod/<namespace>/<pod-name>`, `deployment/<namespace>/<deployment-name>`, or `job/<namespace>/<job-name>`. The collector records the cluster name, namespace, workload name, Kubernetes reason, container when available, restart count when available, and a bounded diagnostic message. Its event IDs are deterministic, so watch reconnects and collector restarts do not duplicate evidence in the API.
 
 See the [Kubernetes workload collector guide](integrations/kubernetes-collector.md) for its read-only RBAC manifest and configuration.
+
+## Alertmanager events
+
+Alertmanager produces `source: "alertmanager"` events for Prometheus alerts. `service` and `namespace` come from the alert labels. The integration records firing and resolved states separately, so an investigation can see both when an alert began and when it recovered.
+
+`resource` is `service/<namespace>/<service>`. Attributes record the alert name, fingerprint, lifecycle state, bounded labels and annotations, and the Prometheus generator URL. Event IDs include the fingerprint, alert start time, and lifecycle state, so Alertmanager retries do not duplicate evidence.

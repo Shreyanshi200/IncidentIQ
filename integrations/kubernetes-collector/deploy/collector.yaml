@@ -47,7 +47,7 @@ spec:
       serviceAccountName: incidentiq-kubernetes-collector
       containers:
         - name: collector
-          image: your-registry/incidentiq-kubernetes-collector:0.4.1
+          image: your-registry/incidentiq-kubernetes-collector:0.4.2
           imagePullPolicy: IfNotPresent
           env:
             - name: INCIDENTIQ_API_KEY

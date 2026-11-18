@@ -39,10 +39,10 @@ If you use your own registry, build the collector from the repository root and p
 ```sh
 docker build \
   -f integrations/kubernetes-collector/Dockerfile \
-  -t your-registry/incidentiq-kubernetes-collector:0.4.1 \
+  -t your-registry/incidentiq-kubernetes-collector:0.4.2 \
   .
 
-docker push your-registry/incidentiq-kubernetes-collector:0.4.1
+docker push your-registry/incidentiq-kubernetes-collector:0.4.2
 ```
 
 ## Deploy to one namespace
@@ -122,14 +122,14 @@ Copy the displayed `https://...trycloudflare.com` URL and keep both terminals ru
 Install [kind](https://kind.sigs.k8s.io/docs/user/quick-start) if needed, then run:
 
 ```sh
-kind create cluster --name incidentiq-v041 --wait 2m
+kind create cluster --name incidentiq-v042 --wait 2m
 
 docker build \
   -f integrations/kubernetes-collector/Dockerfile \
-  -t incidentiq-kubernetes-collector:v0.4.1-test \
+  -t incidentiq-kubernetes-collector:v0.4.2-test \
   .
 
-kind load docker-image incidentiq-kubernetes-collector:v0.4.1-test --name incidentiq-v041
+kind load docker-image incidentiq-kubernetes-collector:v0.4.2-test --name incidentiq-v042
 ```
 
 ### 3. Deploy the collector
@@ -146,11 +146,11 @@ export INCIDENTIQ_API_URL=https://your-tunnel.trycloudflare.com
 kubectl create namespace payments
 kubectl -n payments create secret generic incidentiq --from-literal=api-key="$INCIDENTIQ_API_KEY"
 kubectl -n payments apply -f integrations/kubernetes-collector/deploy/collector.yaml
-kubectl -n payments set image deployment/incidentiq-kubernetes-collector collector=incidentiq-kubernetes-collector:v0.4.1-test
+kubectl -n payments set image deployment/incidentiq-kubernetes-collector collector=incidentiq-kubernetes-collector:v0.4.2-test
 kubectl -n payments set env deployment/incidentiq-kubernetes-collector \
   INCIDENTIQ_API_URL="$INCIDENTIQ_API_URL" \
   INCIDENTIQ_ENVIRONMENT=local \
-  INCIDENTIQ_CLUSTER_NAME=incidentiq-v041
+  INCIDENTIQ_CLUSTER_NAME=incidentiq-v042
 kubectl -n payments rollout status deployment/incidentiq-kubernetes-collector --timeout=2m
 ```
 
@@ -174,7 +174,7 @@ When `orders-failure` reaches `CrashLoopBackOff`, stop the Pod watch with `Ctrl+
 kubectl -n payments logs deployment/incidentiq-kubernetes-collector --tail=100
 ```
 
-You should see a message that Kubernetes workload signals were exported. Back in terminal 1 or a fourth terminal, verify the evidence:
+You should see a message that IncidentIQ signals were exported. Back in terminal 1 or a fourth terminal, verify the evidence:
 
 ```sh
 pnpm incidentiq events list
@@ -213,9 +213,9 @@ kubectl -n payments delete -f integrations/kubernetes-collector/deploy/test-work
 ```
 
 ```sh
-kind delete cluster --name incidentiq-v041
+kind delete cluster --name incidentiq-v042
 ```
 
 ## Current limit
 
-Watch checkpoints are kept in memory. If the collector process restarts, it safely takes a new snapshot before watching again; if Kubernetes expires a checkpoint, it re-lists that resource and resumes from the new version. The collector remains namespace-scoped and has no write permission. Cluster-wide node signals, PVC events without an owning Pod, and metrics collection are future work.
+Watch checkpoints are kept in memory. If the collector process restarts, it safely takes a new snapshot before watching again; if Kubernetes expires a checkpoint, it re-lists that resource and resumes from the new version. The collector remains namespace-scoped and has no write permission. Cluster-wide node signals and PVC events without an owning Pod are future work.

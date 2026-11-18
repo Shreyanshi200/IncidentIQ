@@ -1,0 +1,14 @@
+groups:
+  - name: incidentiq-local-test
+    rules:
+      - alert: IncidentIQLatencyTest
+        expr: vector(1)
+        for: 10s
+        labels:
+          severity: critical
+          service: orders
+          namespace: payments
+          environment: local
+          incidentiq_signal: latency_spike
+        annotations:
+          summary: Deliberately firing local IncidentIQ test alert
