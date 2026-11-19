@@ -17,7 +17,7 @@ When a production service breaks, the useful clues are usually scattered: an err
 
 ## How IncidentIQ helps
 
-IncidentIQ accepts those operational signals, stores them safely in PostgreSQL, removes configured secret fields, and lets you inspect a time-ordered evidence trail. Today you can send application events, GitHub deployment context, read-only Kubernetes workload-failure signals, and Prometheus alerts delivered by Alertmanager. The CLI investigates individual incidents, while the local dashboard shows coverage plus filtered incident evidence timelines.
+IncidentIQ accepts those operational signals, stores them safely in PostgreSQL, removes configured secret fields, and lets you inspect a time-ordered evidence trail. Today you can send application events, GitHub deployment context, read-only Kubernetes workload-failure signals, and Prometheus alerts delivered by Alertmanager. The CLI investigates individual incidents, while the dashboard shows operational coverage and provides filtered, evidence-backed incident investigations.
 
 ## Start locally
 
@@ -138,7 +138,7 @@ For a remote API, the producer needs the API's HTTPS URL and the `iiq_...` inges
 - A namespace-scoped, read-only Kubernetes collector with reconnecting Pod, Event, Deployment, and Job watches
 - Alertmanager webhook ingestion for Prometheus CPU, memory, latency, and error-rate alerts
 - Automatic incident creation for new error and critical signals, with nearby service evidence saved as one timeline
-- A separate local React dashboard with focused Overview and Investigations views, evidence-backed briefs, candidate rankings, contextual next checks, readable timelines, navigable PDF incident reports, and evidence-source activity
+- A separate React dashboard with focused Overview and Investigations views, evidence-backed briefs, candidate rankings, contextual next checks, readable timelines, navigable PDF incident reports, and evidence-source activity
 
 Not included yet: incident acknowledgement or resolution workflow, cluster-wide Kubernetes collection, or AI-generated explanations. See the roadmap for what comes next.
 
@@ -285,7 +285,7 @@ Loading the same fixture more than once does not duplicate its source events. Co
 | [Kubernetes workload collector](docs/integrations/kubernetes-collector.md) | Installing and testing the read-only namespace collector |
 | [Prometheus Alertmanager integration](docs/integrations/alertmanager.md) | Recording firing and resolved Prometheus alerts through Alertmanager webhooks |
 | [Automatic incidents](docs/automatic-incidents.md) | Seeing how live error and critical signals open and enrich a saved evidence timeline |
-| [Dashboard](docs/dashboard.md) | Running the local service, environment, and integration coverage view safely |
+| [Dashboard](docs/dashboard.md) | Running or deploying the authenticated coverage and incident-investigation interface |
 | [Event data guide](docs/event-data.md) | Understanding which fields are generated, configured, or supplied by an integration |
 
 ## Build and test the project

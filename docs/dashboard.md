@@ -8,7 +8,7 @@ The static dashboard files have no embedded API key or tenant data. The page sen
 
 The raw read key is not stored in browser storage. JavaScript cannot read the session cookie, a refresh can safely restore the dashboard, and signing out clears the cookie. Revoking the underlying read key also invalidates its sessions.
 
-Never paste an `ingest` key into the dashboard. An ingestion key can write events; a read key can only load the dashboard overview.
+Never paste an `ingest` key into the dashboard. An ingestion key can write events; a read key can only load its tenant's dashboard overview, investigations, incident details, and reports.
 
 The server's `INCIDENTIQ_SESSION_SECRET` is different from both API keys. It signs browser cookies, stays only on the API server, and is never pasted into the dashboard.
 
@@ -85,6 +85,6 @@ Build the static files from the same released repository version as the API:
 pnpm --filter @incidentiqhq/dashboard build
 ```
 
-The generated files are in `apps/dashboard/dist`. Serve those files from the same HTTPS hostname as the API and proxy `/v1` to the API container. Keeping both on one origin avoids CORS configuration and lets the dashboard use the protected overview endpoint safely.
+The generated files are in `apps/dashboard/dist`. Serve those files from the same HTTPS hostname as the API and proxy `/v1` to the API container. Keeping both on one origin avoids CORS configuration and lets the dashboard use its protected endpoints safely.
 
 Follow the [production API deployment guide](deployment/api-production.md#6-deploy-the-dashboard) for the exact upload, Nginx, read-key, verification, upgrade, and rollback steps.

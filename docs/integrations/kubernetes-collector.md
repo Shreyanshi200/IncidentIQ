@@ -37,13 +37,17 @@ ghcr.io/shreyanshi200/incidentiq-kubernetes-collector:sha-<commit-sha>
 If you use your own registry, build the collector from the repository root and push it to a registry your cluster can pull from:
 
 ```sh
+export INCIDENTIQ_COLLECTOR_IMAGE=your-registry/incidentiq-kubernetes-collector:sha-YOUR_COMMIT_SHA
+
 docker build \
   -f integrations/kubernetes-collector/Dockerfile \
-  -t your-registry/incidentiq-kubernetes-collector:0.4.2 \
+  -t "$INCIDENTIQ_COLLECTOR_IMAGE" \
   .
 
-docker push your-registry/incidentiq-kubernetes-collector:0.4.2
+docker push "$INCIDENTIQ_COLLECTOR_IMAGE"
 ```
+
+Replace `YOUR_COMMIT_SHA` with the commit you built so the deployed image is immutable and traceable.
 
 ## Deploy to one namespace
 
@@ -122,14 +126,14 @@ Copy the displayed `https://...trycloudflare.com` URL and keep both terminals ru
 Install [kind](https://kind.sigs.k8s.io/docs/user/quick-start) if needed, then run:
 
 ```sh
-kind create cluster --name incidentiq-v042 --wait 2m
+kind create cluster --name incidentiq-test --wait 2m
 
 docker build \
   -f integrations/kubernetes-collector/Dockerfile \
-  -t incidentiq-kubernetes-collector:v0.4.2-test \
+  -t incidentiq-kubernetes-collector:local-test \
   .
 
-kind load docker-image incidentiq-kubernetes-collector:v0.4.2-test --name incidentiq-v042
+kind load docker-image incidentiq-kubernetes-collector:local-test --name incidentiq-test
 ```
 
 ### 3. Deploy the collector
@@ -146,11 +150,11 @@ export INCIDENTIQ_API_URL=https://your-tunnel.trycloudflare.com
 kubectl create namespace payments
 kubectl -n payments create secret generic incidentiq --from-literal=api-key="$INCIDENTIQ_API_KEY"
 kubectl -n payments apply -f integrations/kubernetes-collector/deploy/collector.yaml
-kubectl -n payments set image deployment/incidentiq-kubernetes-collector collector=incidentiq-kubernetes-collector:v0.4.2-test
+kubectl -n payments set image deployment/incidentiq-kubernetes-collector collector=incidentiq-kubernetes-collector:local-test
 kubectl -n payments set env deployment/incidentiq-kubernetes-collector \
   INCIDENTIQ_API_URL="$INCIDENTIQ_API_URL" \
   INCIDENTIQ_ENVIRONMENT=local \
-  INCIDENTIQ_CLUSTER_NAME=incidentiq-v042
+  INCIDENTIQ_CLUSTER_NAME=incidentiq-test
 kubectl -n payments rollout status deployment/incidentiq-kubernetes-collector --timeout=2m
 ```
 
@@ -213,7 +217,7 @@ kubectl -n payments delete -f integrations/kubernetes-collector/deploy/test-work
 ```
 
 ```sh
-kind delete cluster --name incidentiq-v042
+kind delete cluster --name incidentiq-test
 ```
 
 ## Current limit
