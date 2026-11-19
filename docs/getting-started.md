@@ -24,9 +24,11 @@ The default `.env` configures a local database:
 
 ```text
 DATABASE_URL=postgresql://incidentiq:incidentiq@localhost:5432/incidentiq
+INCIDENTIQ_INCIDENT_GAP_MINUTES=10
+INCIDENTIQ_CONTEXT_LOOKBACK_MINUTES=10
 ```
 
-For a deployed API, replace this with the PostgreSQL connection string supplied by your hosting environment. Keep it secret.
+For a deployed API, replace the database URL with the PostgreSQL connection string supplied by your hosting environment. Keep it secret. The two incident settings accept positive minute values: the gap controls when matching evidence starts a new incident, while the lookback controls how far before the incident IncidentIQ searches for context and correlation evidence.
 
 ## 2. Initialise the database and create an ingestion key
 

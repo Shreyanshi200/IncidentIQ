@@ -60,6 +60,12 @@ interface IncidentsTable {
   updated_at: Generated<string>;
 }
 
+interface IncidentEventsTable {
+  incident_id: string;
+  event_id: string;
+  linked_at: Generated<string>;
+}
+
 interface ApiKeysTable {
   key_id: string;
   key_hash: string;
@@ -78,6 +84,7 @@ interface SchemaMigrationsTable {
 interface Database {
   source_events: SourceEventsTable;
   incidents: IncidentsTable;
+  incident_events: IncidentEventsTable;
   api_keys: ApiKeysTable;
   schema_migrations: SchemaMigrationsTable;
 }
@@ -141,34 +148,43 @@ export async function saveInvestigation(db: Kysely<Database>, result: Correlatio
   const startedAt = result.timeline[0];
   const affectedEvent = result.timeline.at(-1);
   if (!startedAt || !affectedEvent) throw new Error("An investigation requires at least one event");
-  return db
-    .insertInto("incidents")
-    .values({
-      incident_id: result.fixture_id,
-      tenant_id: affectedEvent.tenant_id,
-      service: affectedEvent.service,
-      environment: affectedEvent.environment,
-      state: "open",
-      started_at: startedAt.occurred_at,
-      last_event_at: affectedEvent.occurred_at,
-      event_count: result.timeline.length,
-      leading_cause: result.leading_cause,
-      confidence: result.confidence,
-      investigation: result
-    })
-    .onConflict((conflict) => conflict.column("incident_id").doUpdateSet({
-      tenant_id: affectedEvent.tenant_id,
-      service: affectedEvent.service,
-      environment: affectedEvent.environment,
-      last_event_at: affectedEvent.occurred_at,
-      event_count: result.timeline.length,
-      leading_cause: result.leading_cause,
-      confidence: result.confidence,
-      investigation: result,
-      updated_at: sql`now()`
-    }))
-    .returning(["incident_id", "tenant_id", "service", "environment", "state", "started_at", "last_event_at", "event_count", "leading_cause", "confidence"])
-    .executeTakeFirstOrThrow();
+  return db.transaction().execute(async (transaction) => {
+    const incident = await transaction
+      .insertInto("incidents")
+      .values({
+        incident_id: result.fixture_id,
+        tenant_id: affectedEvent.tenant_id,
+        service: affectedEvent.service,
+        environment: affectedEvent.environment,
+        state: "open",
+        started_at: startedAt.occurred_at,
+        last_event_at: affectedEvent.occurred_at,
+        event_count: result.timeline.length,
+        leading_cause: result.leading_cause,
+        confidence: result.confidence,
+        investigation: result
+      })
+      .onConflict((conflict) => conflict.column("incident_id").doUpdateSet({
+        tenant_id: affectedEvent.tenant_id,
+        service: affectedEvent.service,
+        environment: affectedEvent.environment,
+        last_event_at: affectedEvent.occurred_at,
+        event_count: result.timeline.length,
+        leading_cause: result.leading_cause,
+        confidence: result.confidence,
+        investigation: result,
+        updated_at: sql`now()`
+      }))
+      .returning(["incident_id", "tenant_id", "service", "environment", "state", "started_at", "last_event_at", "event_count", "leading_cause", "confidence"])
+      .executeTakeFirstOrThrow();
+
+    await transaction.deleteFrom("incident_events").where("incident_id", "=", result.fixture_id).execute();
+    await transaction
+      .insertInto("incident_events")
+      .values(result.timeline.map((event) => ({ incident_id: result.fixture_id, event_id: event.event_id })))
+      .execute();
+    return incident;
+  });
 }
 
 export async function listIncidents(db: Kysely<Database>): Promise<IncidentSummary[]> {

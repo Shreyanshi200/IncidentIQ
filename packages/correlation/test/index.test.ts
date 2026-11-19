@@ -30,3 +30,32 @@ test("an error before a deployment is counterevidence", async () => {
   assert.ok(deployment?.factors.some((factor) => factor.name === "counterevidence"));
   assert.equal(result.leading_cause, "ambiguous");
 });
+
+test("production-like evidence produces an explainable, contextual investigation", async () => {
+  const fixture = JSON.parse(await readFile("demo/fixtures/production-checkout-regression.json", "utf8")) as IncidentFixture;
+  const result = correlate(fixture);
+  assert.equal(result.timeline.length, 20);
+  assert.equal(result.leading_cause, "bad_release");
+  assert.equal(result.confidence, "high");
+  assert.equal(result.scenario, fixture.scenario);
+  assert.ok(result.next_checks.some((check) => check.includes("POST /checkout") && check.includes("3.4.0")));
+  assert.ok(result.candidates.find((candidate) => candidate.cause === "bad_release")?.factors.some((factor) => factor.name === "version_match"));
+});
+
+test("all Node SDK error types participate in correlation", async () => {
+  const fixture = JSON.parse(await readFile("demo/fixtures/deployment-regression.json", "utf8")) as IncidentFixture;
+  const events = fixture.events.map((event) => event.source === "node_sdk" ? { ...event, event_type: "database_timeout", severity: "critical" as const } : event);
+  const result = correlate({ ...fixture, events });
+  assert.equal(result.leading_cause, "deployment_regression");
+  assert.equal(result.confidence, "high");
+});
+
+test("correlation accepts a configured evidence window", async () => {
+  const fixture = JSON.parse(await readFile("demo/fixtures/deployment-regression.json", "utf8")) as IncidentFixture;
+  const events = fixture.events.map((event) => event.source === "node_sdk" ? { ...event, occurred_at: "2026-10-09T14:17:00.000Z", received_at: "2026-10-09T14:17:01.000Z" } : event);
+  assert.equal(correlate({ ...fixture, events }).leading_cause, "ambiguous");
+  const configured = correlate({ ...fixture, events }, { eventWindowMs: 20 * 60 * 1000 });
+  assert.equal(configured.leading_cause, "deployment_regression");
+  assert.equal(configured.correlation_window_ms, 20 * 60 * 1000);
+  assert.throws(() => correlate(fixture, { eventWindowMs: 0 }), /eventWindowMs must be a positive number/);
+});

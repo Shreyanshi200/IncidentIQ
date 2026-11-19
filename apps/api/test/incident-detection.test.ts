@@ -5,8 +5,16 @@ import type { AddressInfo } from "node:net";
 import { ApiKeysService } from "../src/api-keys.service.js";
 import { createApp } from "../src/app.js";
 import { DatabaseService } from "../src/database.js";
+import { configuredWindowMs } from "../src/incident-detection.service.js";
 
 const databaseUrl = process.env.DATABASE_URL;
+
+test("incident window settings use validated minute values", () => {
+  assert.equal(configuredWindowMs(undefined, "WINDOW"), 10 * 60 * 1000);
+  assert.equal(configuredWindowMs("2.5", "WINDOW"), 2.5 * 60 * 1000);
+  assert.throws(() => configuredWindowMs("0", "WINDOW"), /WINDOW must be a positive number of minutes/);
+  assert.throws(() => configuredWindowMs("not-a-number", "WINDOW"), /WINDOW must be a positive number of minutes/);
+});
 
 test("error signals create one incident with nearby timeline evidence", { skip: !databaseUrl }, async () => {
   const app = await createApp();
@@ -41,8 +49,8 @@ test("error signals create one incident with nearby timeline evidence", { skip: 
             environment: "test",
             service,
             source: "node_sdk",
-            event_type: "exception",
-            severity: "error",
+            event_type: "database_timeout",
+            severity: "critical",
             version: "1.2.3",
             attributes: { message: "connection refused" }
           },
@@ -71,7 +79,8 @@ test("error signals create one incident with nearby timeline evidence", { skip: 
     assert.equal(incident.event_count, 3);
     assert.equal(incident.leading_cause, "deployment_regression");
     assert.equal(incident.confidence, "high");
-    const investigation = incident.investigation as { timeline: Array<{ event_id: string }> };
+    const investigation = incident.investigation as { correlation_window_ms: number; timeline: Array<{ event_id: string }> };
+    assert.equal(investigation.correlation_window_ms, 10 * 60 * 1000);
     assert.deepEqual(investigation.timeline.map((event) => event.event_id), [`deploy-${suffix}`, `error-${suffix}`, `restart-${suffix}`]);
     const evidence = await database.selectFrom("incident_events").select("event_id").where("incident_id", "=", incident.incident_id).orderBy("event_id").execute();
     assert.deepEqual(evidence.map((event) => event.event_id).sort(), [`deploy-${suffix}`, `error-${suffix}`, `restart-${suffix}`].sort());

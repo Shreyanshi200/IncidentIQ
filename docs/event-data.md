@@ -42,7 +42,7 @@ These conventions keep deployment, application, and Kubernetes evidence joinable
 
 ## Automatic incident grouping
 
-The API evaluates every newly accepted event. An `error` or `critical` event opens an incident unless there is already an open incident for the same tenant, service, and environment with activity in the surrounding ten-minute window. Informational and warning events do not open incidents on their own, but they are added as evidence when they arrive near an open incident.
+The API evaluates every newly accepted event. An `error` or `critical` event opens an incident unless there is already an open incident for the same tenant, service, and environment within the configured activity gap. Informational and warning events do not open incidents on their own, but they are added as evidence when they arrive near an open incident. `INCIDENTIQ_INCIDENT_GAP_MINUTES` and `INCIDENTIQ_CONTEXT_LOOKBACK_MINUTES` are positive minute values and both default to `10`.
 
 IncidentIQ saves the ordered timeline and its evidence links. The local CLI exposes it through `pnpm incidentiq incidents list` and `pnpm incidentiq incidents explain <id>`. Current incidents remain open until a later lifecycle release; they are not automatically closed from an Alertmanager resolved event yet.
 

@@ -10,7 +10,7 @@ const databaseUrl = process.env.DATABASE_URL;
 
 test("version reports the CLI and schema versions", async () => {
   const { stdout } = await run(process.execPath, [cli, "version"]);
-  assert.match(stdout, /incidentiq 0\.7\.0 \(schema 0\.0\.6\)/);
+  assert.match(stdout, /incidentiq 0\.7\.1 \(schema 0\.0\.6\)/);
 });
 
 test("correlate ranks the seeded cause", async () => {

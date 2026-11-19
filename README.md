@@ -17,7 +17,7 @@ When a production service breaks, the useful clues are usually scattered: an err
 
 ## How IncidentIQ helps
 
-IncidentIQ accepts those operational signals, stores them safely in PostgreSQL, removes configured secret fields, and lets you inspect a time-ordered evidence trail. Today you can send application events, GitHub deployment context, read-only Kubernetes workload-failure signals, and Prometheus alerts delivered by Alertmanager. The CLI investigates individual incidents, while the local dashboard shows coverage across services, environments, and integrations.
+IncidentIQ accepts those operational signals, stores them safely in PostgreSQL, removes configured secret fields, and lets you inspect a time-ordered evidence trail. Today you can send application events, GitHub deployment context, read-only Kubernetes workload-failure signals, and Prometheus alerts delivered by Alertmanager. The CLI investigates individual incidents, while the local dashboard shows coverage plus filtered incident evidence timelines.
 
 ## Start locally
 
@@ -138,9 +138,69 @@ For a remote API, the producer needs the API's HTTPS URL and the `iiq_...` inges
 - A namespace-scoped, read-only Kubernetes collector with reconnecting Pod, Event, Deployment, and Job watches
 - Alertmanager webhook ingestion for Prometheus CPU, memory, latency, and error-rate alerts
 - Automatic incident creation for new error and critical signals, with nearby service evidence saved as one timeline
-- A separate local React dashboard for service, environment, and integration coverage
+- A separate local React dashboard with focused Overview and Investigations views, evidence-backed briefs, candidate rankings, contextual next checks, readable timelines, navigable PDF incident reports, and evidence-source activity
 
-Not included yet: dashboard incident investigations, incident resolution workflow, cluster-wide Kubernetes collection, or AI-generated explanations. See the roadmap for what comes next.
+Not included yet: incident acknowledgement or resolution workflow, cluster-wide Kubernetes collection, or AI-generated explanations. See the roadmap for what comes next.
+
+## Product tour
+
+These screenshots use the included production-like checkout fixture, which combines deployment, application, Kubernetes, Alertmanager, rollback, and recovery evidence in one investigation.
+
+### 1. Start a secure browser session
+
+<p align="center">
+  <img src="assets/screenshots/dashboard-login.png" alt="IncidentIQ dashboard login screen requesting a read-only API key" width="960">
+</p>
+
+<p align="center"><sub>Use a read-only API key once to create an eight-hour browser session. The dashboard does not store the raw key.</sub></p>
+
+### 2. Review operational coverage
+
+<p align="center">
+  <img src="assets/screenshots/dashboard-overview.png" alt="IncidentIQ operational coverage dashboard showing services, environments, and evidence-source activity" width="960">
+</p>
+
+<p align="center"><sub>See which services, environments, and integrations are contributing evidence.</sub></p>
+
+### 3. Browse incident investigations
+
+<p align="center">
+  <img src="assets/screenshots/investigations.png" alt="IncidentIQ investigation list with service, environment, source filters, confidence, and evidence counts" width="960">
+</p>
+
+<p align="center"><sub>Filter saved incidents and choose one to inspect.</sub></p>
+
+### 4. Inspect one incident
+
+<p align="center">
+  <img src="assets/screenshots/investigation-detail-highlights.png" alt="IncidentIQ investigation showing the incident brief, linked evidence, confidence, and compact evidence highlights" width="960">
+</p>
+
+<p align="center"><sub>Review the leading hypothesis, observed scope, and the exact evidence that influenced its ranking.</sub></p>
+
+### 5. Review the recommended next checks
+
+<p align="center">
+  <img src="assets/screenshots/recommended-next-steps.png" alt="IncidentIQ validation plan with evidence-based recommended next checks followed by the ordered evidence timeline" width="960">
+</p>
+
+<p align="center"><sub>Use the evidence-based validation plan before choosing a remediation.</sub></p>
+
+### 6. Follow what IncidentIQ recorded
+
+<p align="center">
+  <img src="assets/screenshots/evidence-timeline.png" alt="IncidentIQ ordered evidence timeline showing deployment, Kubernetes, application error, and Alertmanager events with plain-language explanations" width="960">
+</p>
+
+<p align="center"><sub>Follow the evidence in time order, with readable explanations and expandable raw attributes.</sub></p>
+
+### 7. Download the incident report
+
+<p align="center">
+  <img src="assets/screenshots/incident-report.png" alt="IncidentIQ PDF incident report showing candidate ranking and supporting observations" width="620">
+</p>
+
+<p align="center"><sub>Download a navigable PDF containing the ranked candidates, supporting and counterevidence, validation plan, and complete evidence timeline.</sub></p>
 
 ## Local dashboard
 
@@ -162,7 +222,7 @@ pnpm dashboard
 
 ## Automatic incidents
 
-When the API accepts an `error` or `critical` event, IncidentIQ opens an incident or adds the event to a nearby open incident for the same tenant, service, and environment. Relevant events from the preceding ten minutes are included as context, so a deployment, application error, and Kubernetes restart can be investigated together.
+When the API accepts an `error` or `critical` event, IncidentIQ opens an incident or adds the event to a nearby open incident for the same tenant, service, and environment. By default, matching evidence is grouped across a ten-minute activity gap and the preceding ten minutes are included as context. Configure these independently with `INCIDENTIQ_INCIDENT_GAP_MINUTES` and `INCIDENTIQ_CONTEXT_LOOKBACK_MINUTES`.
 
 Start with the [automatic incidents guide](docs/automatic-incidents.md) to test this locally and understand its current grouping rules.
 
@@ -170,28 +230,28 @@ Start with the [automatic incidents guide](docs/automatic-incidents.md) to test 
 
 Use this after the local setup above. A fixture is a small, known set of example events, useful for learning how IncidentIQ groups evidence without connecting a real service.
 
-Validate the included deployment example:
+Validate the included production-like checkout incident. It contains 20 deployment, application, alert, Kubernetes, rollback, and recovery events:
 
 ```sh
-pnpm incidentiq fixture validate demo/fixtures/deployment-regression.json
+pnpm incidentiq fixture validate demo/fixtures/production-checkout-regression.json
 ```
 
 Load its events into your local database:
 
 ```sh
-pnpm incidentiq fixture load demo/fixtures/deployment-regression.json
+pnpm incidentiq fixture load demo/fixtures/production-checkout-regression.json
 ```
 
 See the likely causes and evidence timeline:
 
 ```sh
-pnpm incidentiq correlate demo/fixtures/deployment-regression.json
+pnpm incidentiq correlate demo/fixtures/production-checkout-regression.json
 ```
 
 Save the investigation result:
 
 ```sh
-pnpm incidentiq correlate demo/fixtures/deployment-regression.json --save
+pnpm incidentiq correlate demo/fixtures/production-checkout-regression.json --save
 ```
 
 List saved investigations:
@@ -203,16 +263,16 @@ pnpm incidentiq incidents list
 Explain one saved investigation:
 
 ```sh
-pnpm incidentiq incidents explain deployment-regression
+pnpm incidentiq incidents explain production-checkout-regression
 ```
 
 Export it as JSON:
 
 ```sh
-pnpm incidentiq incidents export deployment-regression --format json
+pnpm incidentiq incidents export production-checkout-regression --format json
 ```
 
-Loading the same fixture more than once does not duplicate its source events. Correlation returns an evidence timeline, ranked causes, score factors, and suggested next checks.
+Loading the same fixture more than once does not duplicate its source events. Correlation returns an evidence timeline, ranked causes, score factors, and contextual next checks. Saving it also links every fixture event to the dashboard investigation.
 
 ## Documentation
 
@@ -280,7 +340,7 @@ The API image starts the API by default. It also includes the IncidentIQ CLI, so
 | 0.5.0 | Complete | Public Node.js SDK: npm packages, trusted publishing, and external-install verification |
 | 0.6.0 | Complete | Automatic incident detection and unified timeline |
 | 0.7.0 | Complete | Single-operator dashboard: services, environments, integration setup, and local configuration |
-| 0.7.1 | Planned | Dashboard investigations: incident list, evidence timeline, signal filters, and integration health |
+| 0.7.1 | Complete | Dashboard investigations: evidence-backed brief, candidate ranking, contextual next checks, readable timeline, report download, pagination, filters, and evidence-source activity |
 | 0.8.0 | Planned | Evidence-bounded AI explanations and suggested next investigation steps |
 | 0.8.1 | Planned | Operational polish: safer API-key handling, retention, and cost controls |
 | 0.9.0 | Planned | ClickHouse for scalable historical event storage and investigations |

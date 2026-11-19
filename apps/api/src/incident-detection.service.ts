@@ -5,8 +5,14 @@ import { correlate } from "@incidentiqhq/correlation";
 import type { IncidentFixture, NormalizedEvent } from "@incidentiqhq/event-schema";
 import { type Database, DatabaseService } from "./database.js";
 
-const INCIDENT_GAP_MS = 10 * 60 * 1000;
-const CONTEXT_LOOKBACK_MS = 10 * 60 * 1000;
+const DEFAULT_WINDOW_MINUTES = 10;
+
+export function configuredWindowMs(value: string | undefined, name: string): number {
+  if (value === undefined) return DEFAULT_WINDOW_MINUTES * 60 * 1000;
+  const minutes = Number(value);
+  if (!Number.isFinite(minutes) || minutes <= 0) throw new Error(`${name} must be a positive number of minutes`);
+  return minutes * 60 * 1000;
+}
 
 function timestamp(value: string): number {
   return Date.parse(value);
@@ -59,7 +65,13 @@ export function isIncidentSignal(event: NormalizedEvent): boolean {
 
 @Injectable()
 export class IncidentDetectionService {
-  constructor(private readonly database: DatabaseService) {}
+  private readonly incidentGapMs: number;
+  private readonly contextLookbackMs: number;
+
+  constructor(private readonly database: DatabaseService) {
+    this.incidentGapMs = configuredWindowMs(process.env.INCIDENTIQ_INCIDENT_GAP_MINUTES, "INCIDENTIQ_INCIDENT_GAP_MINUTES");
+    this.contextLookbackMs = configuredWindowMs(process.env.INCIDENTIQ_CONTEXT_LOOKBACK_MINUTES, "INCIDENTIQ_CONTEXT_LOOKBACK_MINUTES");
+  }
 
   // shortcut: detection is evaluated per accepted event; batch it when high-volume ingestion is introduced.
   async detect(event: NormalizedEvent, db: Kysely<Database> = this.database.db): Promise<void> {
@@ -71,8 +83,8 @@ export class IncidentDetectionService {
       .where("service", "=", event.service)
       .where("environment", "=", event.environment)
       .where("state", "=", "open")
-      .where("last_event_at", ">=", isoTimestamp(eventAt - INCIDENT_GAP_MS))
-      .where("started_at", "<=", isoTimestamp(eventAt + INCIDENT_GAP_MS))
+      .where("last_event_at", ">=", isoTimestamp(eventAt - this.incidentGapMs))
+      .where("started_at", "<=", isoTimestamp(eventAt + this.incidentGapMs))
       .orderBy("last_event_at", "desc")
       .executeTakeFirst();
 
@@ -87,7 +99,7 @@ export class IncidentDetectionService {
       .where("tenant_id", "=", event.tenant_id)
       .where("service", "=", event.service)
       .where("environment", "=", event.environment)
-      .where("occurred_at", ">=", isoTimestamp(timestamp(startedAt) - CONTEXT_LOOKBACK_MS))
+      .where("occurred_at", ">=", isoTimestamp(timestamp(startedAt) - this.contextLookbackMs))
       .where("occurred_at", "<=", lastEventAt)
       .orderBy("occurred_at")
       .orderBy("event_id")
@@ -97,7 +109,7 @@ export class IncidentDetectionService {
       scenario: `Automatically detected signals for ${event.service} in ${event.environment}`,
       expected_cause: "automatic_detection",
       events: timeline
-    } satisfies IncidentFixture);
+    } satisfies IncidentFixture, { eventWindowMs: this.contextLookbackMs });
 
     if (nearbyIncident) {
       await db

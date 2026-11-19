@@ -45,6 +45,8 @@ incidentiq.track({
 
 Call `track` beside the error handling that already knows the service, environment, event type, and safe diagnostic attributes. Do not include passwords, tokens, cookies, or full authorization headers.
 
+Any Node SDK event with severity `error` or `critical` participates in application-failure correlation; `event_type` can describe the actual failure, such as `exception`, `database_timeout`, or `checkout_failed`.
+
 ## Flush during shutdown
 
 ```ts
