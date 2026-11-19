@@ -4,6 +4,8 @@
 [![Node.js 24+](https://img.shields.io/badge/Node.js-24%2B-339933.svg)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6.svg)](https://www.typescriptlang.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-18-4169E1.svg)](https://www.postgresql.org/)
+[![npm node SDK](https://img.shields.io/npm/v/%40incidentiqhq%2Fnode-sdk?label=node-sdk&color=CB3837)](https://www.npmjs.com/package/@incidentiqhq/node-sdk)
+[![npm event schema](https://img.shields.io/npm/v/%40incidentiqhq%2Fevent-schema?label=event-schema&color=CB3837)](https://www.npmjs.com/package/@incidentiqhq/event-schema)
 
 <p align="center">
   <img src="assets/incidentiq-iq.png" alt="Application, deployment, and infrastructure signals flowing into an IncidentIQ evidence graph" width="960">
@@ -168,7 +170,7 @@ flowchart LR
 
 | Evidence source | What it contributes | Setup guide |
 | --- | --- | --- |
-| Node.js SDK | Application errors and safe diagnostic context | [Node.js SDK](docs/integrations/node-sdk.md) |
+| [`@incidentiqhq/node-sdk`](https://www.npmjs.com/package/@incidentiqhq/node-sdk) | Application errors and safe diagnostic context | [Node.js SDK guide](docs/integrations/node-sdk.md) |
 | GitHub Actions | Deployment status, commit, workflow, actor, and run metadata | [GitHub Actions](docs/integrations/github-actions.md) |
 | Kubernetes collector | Pod, Deployment, Job, and Kubernetes Event failures | [Kubernetes collector](docs/integrations/kubernetes-collector.md) |
 | Prometheus Alertmanager | CPU, memory, latency, error-rate, and other alert lifecycle events | [Alertmanager](docs/integrations/alertmanager.md) |
