@@ -51,6 +51,8 @@ Edit `~/incidentiq-production/.env`. Replace all placeholders:
 - `INCIDENTIQ_API_IMAGE` — an immutable `sha-<commit-sha>` tag from a successful merge to `main`;
 - `DATABASE_URL` — the real PostgreSQL connection string, including the provider's TLS settings;
 - `INCIDENTIQ_SESSION_SECRET` — at least 32 random bytes used to sign short-lived dashboard sessions; and
+- `INCIDENTIQ_INCIDENT_GAP_MINUTES` — positive minutes of inactivity after which a matching error starts a new incident, normally `10`;
+- `INCIDENTIQ_CONTEXT_LOOKBACK_MINUTES` — positive minutes of preceding evidence included and evaluated for cause correlation, normally `10`; and
 - `PORT` — normally leave this as `3000`.
 
 Keep `.env` readable only by the deployment operator. It contains the database password.

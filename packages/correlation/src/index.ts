@@ -16,6 +16,8 @@ export interface CandidateScore {
 
 export interface CorrelationResult {
   fixture_id: string;
+  scenario: string;
+  correlation_window_ms: number;
   timeline: NormalizedEvent[];
   leading_cause: Cause;
   confidence: "high" | "low";
@@ -25,6 +27,10 @@ export interface CorrelationResult {
 
 const EVENT_WINDOW_MS = 10 * 60 * 1000;
 
+export interface CorrelationOptions {
+  eventWindowMs?: number;
+}
+
 function timestamp(event: NormalizedEvent): number {
   return Date.parse(event.occurred_at);
 }
@@ -33,13 +39,13 @@ function sortTimeline(events: NormalizedEvent[]): NormalizedEvent[] {
   return [...events].sort((left, right) => timestamp(left) - timestamp(right) || left.event_id.localeCompare(right.event_id));
 }
 
-function afterWithin(event: NormalizedEvent, reference: NormalizedEvent): boolean {
+function afterWithin(event: NormalizedEvent, reference: NormalizedEvent, eventWindowMs: number): boolean {
   const difference = timestamp(event) - timestamp(reference);
-  return difference >= 0 && difference <= EVENT_WINDOW_MS;
+  return difference >= 0 && difference <= eventWindowMs;
 }
 
 function isApplicationError(event: NormalizedEvent): boolean {
-  return event.source === "node_sdk" && event.event_type === "exception" && event.severity === "error";
+  return event.source === "node_sdk" && (event.severity === "error" || event.severity === "critical");
 }
 
 function stringAttribute(event: NormalizedEvent, name: string): string | undefined {
@@ -51,10 +57,10 @@ function candidate(cause: CandidateScore["cause"], factors: ScoreFactor[]): Cand
   return { cause, score: factors.reduce((total, factor) => total + factor.score, 0), factors };
 }
 
-function deploymentCandidate(timeline: NormalizedEvent[], routeSpecific: boolean): CandidateScore {
+function deploymentCandidate(timeline: NormalizedEvent[], routeSpecific: boolean, eventWindowMs: number): CandidateScore {
   const factors: ScoreFactor[] = [];
   for (const deployment of timeline.filter((event) => event.event_type === "deployment")) {
-    const errors = timeline.filter((event) => isApplicationError(event) && event.service === deployment.service && afterWithin(event, deployment));
+    const errors = timeline.filter((event) => isApplicationError(event) && event.service === deployment.service && afterWithin(event, deployment, eventWindowMs));
     const relevantErrors = errors.filter((event) => Boolean(stringAttribute(event, "route")) === routeSpecific);
     if (relevantErrors.length === 0) continue;
     // shortcut: each deployment uses its first matching error; aggregate windows once live telemetry arrives.
@@ -69,11 +75,11 @@ function deploymentCandidate(timeline: NormalizedEvent[], routeSpecific: boolean
   return candidate(routeSpecific ? "bad_release" : "deployment_regression", factors);
 }
 
-function resourceCandidate(timeline: NormalizedEvent[]): CandidateScore {
+function resourceCandidate(timeline: NormalizedEvent[], eventWindowMs: number): CandidateScore {
   const factors: ScoreFactor[] = [];
   for (const resource of timeline.filter((event) => event.event_type === "oom_killed" || event.event_type === "crash_loop_back_off")) {
     factors.push({ name: "resource_signal", score: 3, evidence_ids: [resource.event_id] });
-    const error = timeline.find((event) => isApplicationError(event) && event.service === resource.service && afterWithin(event, resource));
+    const error = timeline.find((event) => isApplicationError(event) && event.service === resource.service && afterWithin(event, resource, eventWindowMs));
     if (error) {
       factors.push({ name: "temporal_proximity", score: 2, evidence_ids: [resource.event_id, error.event_id] });
       factors.push({ name: "entity_match", score: 2, evidence_ids: [resource.event_id, error.event_id] });
@@ -95,28 +101,59 @@ function downstreamCandidate(timeline: NormalizedEvent[]): CandidateScore {
   return candidate("downstream_timeout", factors);
 }
 
-function nextChecks(cause: Cause): string[] {
+function nextChecks(cause: Cause, timeline: NormalizedEvent[]): string[] {
+  const deployment = timeline.find((event) => event.event_type === "deployment");
+  const error = timeline.find(isApplicationError);
+  const dependencyError = timeline.find((event) => isApplicationError(event) && Boolean(stringAttribute(event, "dependency")));
+  const resource = timeline.find((event) => event.event_type === "oom_killed" || event.event_type === "crash_loop_back_off");
+  const version = error?.version ?? deployment?.version;
+  const route = error ? stringAttribute(error, "route") : undefined;
+  const dependency = dependencyError ? stringAttribute(dependencyError, "dependency") : undefined;
+  const commit = (deployment ? stringAttribute(deployment, "commit_sha") ?? stringAttribute(deployment, "commit") : undefined)?.slice(0, 12);
+
   switch (cause) {
     case "deployment_regression":
-      return ["Compare the deployed version with the previous database configuration.", "Validate a rollback or disable the changed connection-pool setting."];
+      return [
+        `Compare version ${version ?? "from the deployment evidence"} with the previous release, including runtime configuration and dependency changes.`,
+        `Review the deployment diff${commit ? ` for commit ${commit}` : ""} beside the first application error, then identify the first changed code or configuration path.`,
+        "If the failure is absent on the previous version, validate a rollback in a controlled environment before changing infrastructure."
+      ];
     case "resource_exhaustion":
-      return ["Inspect memory usage and limits for the affected workload.", "Review allocation patterns before increasing the memory limit."];
+      return [
+        `Inspect memory usage, requests, and limits for ${resource?.resource ?? "the affected workload"} around the first resource failure.`,
+        "Compare container restarts and allocation growth with the application errors in this evidence window.",
+        "Confirm whether memory usage grows again after restart before increasing limits or changing application allocation behavior."
+      ];
     case "downstream_timeout":
-      return ["Check the downstream service latency and availability.", "Trace the failing dependency request before changing the upstream service."];
+      return [
+        `Check latency, errors, and saturation for ${dependency ?? "the named downstream dependency"} during this incident window.`,
+        `Follow trace ${dependencyError?.trace_id ?? "from the linked error"} from the downstream failure back to the affected service.`,
+        "Verify timeout and retry behavior before changing the upstream service or increasing its timeout."
+      ];
     case "bad_release":
-      return ["Reproduce the failing route on the deployed version.", "Validate a rollback before releasing a corrected version."];
+      return [
+        `Reproduce ${route ?? "the first failing request"} on version ${version ?? "from the deployment evidence"} and compare it with the previous release.`,
+        `Review the deployment diff${commit ? ` for commit ${commit}` : ""}, focusing on the failing route and its configuration or dependencies.`,
+        "If the route succeeds on the previous version, validate rollback safety before releasing a correction."
+      ];
     case "ambiguous":
-      return ["Compare deployment health with node and workload pressure.", "Collect more traces and resource events before choosing a remediation."];
+      return [
+        "Compare the timing of deployment, application, workload, and alert evidence; no candidate is decisively ahead yet.",
+        "Collect the missing trace, resource, or pre-change baseline needed to separate the top two candidates.",
+        "Avoid remediation until one hypothesis is supported by evidence that the competing hypothesis cannot explain."
+      ];
   }
 }
 
-export function correlate(fixture: IncidentFixture): CorrelationResult {
+export function correlate(fixture: IncidentFixture, options: CorrelationOptions = {}): CorrelationResult {
+  const eventWindowMs = options.eventWindowMs ?? EVENT_WINDOW_MS;
+  if (!Number.isFinite(eventWindowMs) || eventWindowMs <= 0) throw new Error("eventWindowMs must be a positive number");
   const timeline = sortTimeline(fixture.events);
   const candidates = [
-    deploymentCandidate(timeline, false),
-    resourceCandidate(timeline),
+    deploymentCandidate(timeline, false, eventWindowMs),
+    resourceCandidate(timeline, eventWindowMs),
     downstreamCandidate(timeline),
-    deploymentCandidate(timeline, true)
+    deploymentCandidate(timeline, true, eventWindowMs)
   ].sort((left, right) => right.score - left.score || left.cause.localeCompare(right.cause));
   const top = candidates[0];
   const second = candidates[1];
@@ -125,10 +162,12 @@ export function correlate(fixture: IncidentFixture): CorrelationResult {
   const leadingCause = isAmbiguous ? "ambiguous" : top.cause;
   return {
     fixture_id: fixture.fixture_id,
+    scenario: fixture.scenario,
+    correlation_window_ms: eventWindowMs,
     timeline,
     leading_cause: leadingCause,
     confidence: isAmbiguous ? "low" : "high",
     candidates,
-    next_checks: nextChecks(leadingCause)
+    next_checks: nextChecks(leadingCause, timeline)
   };
 }

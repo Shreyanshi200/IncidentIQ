@@ -1,6 +1,6 @@
 {
   "name": "@incidentiqhq/api",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "private": true,
   "type": "module",
   "dependencies": {
@@ -10,6 +10,7 @@
     "@nestjs/core": "^11.1.14",
     "@nestjs/platform-express": "^11.1.14",
     "kysely": "^0.28.8",
+    "pdfkit": "^0.20.2",
     "pg": "^8.16.3",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"
@@ -17,5 +18,8 @@
   "scripts": {
     "build": "tsc --project tsconfig.json",
     "start": "node dist/src/main.js"
+  },
+  "devDependencies": {
+    "@types/pdfkit": "^0.17.7"
   }
 }

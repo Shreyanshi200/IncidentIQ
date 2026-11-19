@@ -9,6 +9,7 @@ export function formatInvestigation(result: CorrelationResult): string {
   const leading = result.candidates.find((candidate) => candidate.cause === result.leading_cause) ?? result.candidates[0];
   return [
     `Incident: ${result.fixture_id}`,
+    `Scenario: ${result.scenario}`,
     `Likely cause: ${label(result.leading_cause)} (${result.confidence} confidence)`,
     "",
     "Timeline:",

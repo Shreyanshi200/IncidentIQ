@@ -7,11 +7,23 @@ IncidentIQ now turns live ingestion into an investigation automatically. It is i
 Every newly accepted event is evaluated inside the same database transaction that stores it.
 
 - An event with severity `error` or `critical` opens an incident when no nearby incident exists.
-- An event arriving within ten minutes of an open incident for the same tenant, service, and environment enriches that incident's timeline.
-- The new incident includes matching service events from the preceding ten minutes. This lets a deployment be visible beside the error that followed it.
+- An event arriving within the configured activity gap of an open incident for the same tenant, service, and environment enriches that incident's timeline.
+- The new incident includes matching service events from the configured preceding-context window. This lets a deployment be visible beside the error that followed it.
 - `info` and `warning` events do not open incidents by themselves. They can still enrich a nearby open incident.
 
 Incident IDs begin with `auto_`. The timeline is ordered by its event occurrence time and is stored with the incident, along with the current evidence-based cause ranking.
+
+Both windows default to ten minutes. Override them before starting the API:
+
+```sh
+export INCIDENTIQ_INCIDENT_GAP_MINUTES=10
+```
+
+```sh
+export INCIDENTIQ_CONTEXT_LOOKBACK_MINUTES=10
+```
+
+Only positive numbers are accepted; invalid values stop the API instead of silently changing incident grouping. The context lookback is also used as the temporal correlation window.
 
 ## Local test
 
@@ -74,8 +86,34 @@ The command prints the unified timeline, ranked causes, evidence factors, and su
 pnpm incidentiq incidents export auto_replace_with_the_listed_id --format json
 ```
 
+## Rehearse a production-like investigation
+
+The small request above proves live ingestion. To judge whether the dashboard is useful during a realistic investigation, use the included 20-event checkout scenario. It contains a production release, application exceptions, Prometheus alerts, unhealthy pods, a crash loop, a failed rollout, rollback, and recovery evidence.
+
+Validate the fixture:
+
+```sh
+pnpm incidentiq fixture validate demo/fixtures/production-checkout-regression.json
+```
+
+Load its source evidence:
+
+```sh
+pnpm incidentiq fixture load demo/fixtures/production-checkout-regression.json
+```
+
+Correlate and save the investigation:
+
+```sh
+pnpm incidentiq correlate demo/fixtures/production-checkout-regression.json --save
+```
+
+Open the dashboard, select **Investigations**, and inspect `production-checkout-regression`. You should see a high-confidence release hypothesis, the factors and alternative candidates behind it, contextual validation steps, and all 20 events in order. The raw attributes remain expandable so you can verify every plain-language summary.
+
+This fixture path writes known demo evidence directly to PostgreSQL. Use the earlier API request when you specifically want to test authenticated ingestion and automatic incident creation.
+
 ## Current boundaries
 
 - Automatic detection runs only for events received by the API. `pnpm incidentiq fixture load ...` intentionally writes demo events directly to PostgreSQL and does not create automatic incidents.
 - Grouping is local to a tenant, service, and environment. Cross-service incident merging and dependency graphs remain future work.
-- Incidents stay `open`; acknowledgement, resolution, and notification workflow are planned after the dashboard foundation.
+- Incidents stay `open`; the v0.7.1 dashboard can now list them and show an evidence-backed brief, candidate ranking, validation plan, and linked timeline. Acknowledgement, resolution, and notification workflow remain future work.

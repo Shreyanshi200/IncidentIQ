@@ -27,6 +27,8 @@ test("migrations and fixture loads are idempotent", { skip: !databaseUrl }, asyn
     await saveInvestigation(database, correlate({ ...uniqueFixture, fixture_id: `incident-${suffix}` }));
     assert.equal((await listIncidents(database)).some((incident) => incident.incident_id === `incident-${suffix}`), true);
     assert.equal((await getIncident(database, `incident-${suffix}`))?.investigation.leading_cause, "deployment_regression");
+    const linkedEvidence = await database.selectFrom("incident_events").select("event_id").where("incident_id", "=", `incident-${suffix}`).execute();
+    assert.equal(linkedEvidence.length, uniqueFixture.events.length);
   } finally {
     await database.destroy();
   }
