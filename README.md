@@ -197,7 +197,7 @@ These screenshots use the included production-like checkout fixture, which combi
 ### 7. Download the incident report
 
 <p align="center">
-  <img src="assets/screenshots/incident-report.png" alt="IncidentIQ PDF incident report showing candidate ranking and supporting observations" width="620">
+  <img src="assets/screenshots/incident-report-cover.png" alt="First page of the IncidentIQ PDF report showing the incident summary, leading hypothesis, observed scope, and report navigation" width="620">
 </p>
 
 <p align="center"><sub>Download a navigable PDF containing the ranked candidates, supporting and counterevidence, validation plan, and complete evidence timeline.</sub></p>
