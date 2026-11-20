@@ -42,6 +42,23 @@ test("production-like evidence produces an explainable, contextual investigation
   assert.ok(result.candidates.find((candidate) => candidate.cause === "bad_release")?.factors.some((factor) => factor.name === "version_match"));
 });
 
+test("a noisy multi-service cascade preserves the downstream cause", async () => {
+  const fixture = JSON.parse(await readFile("demo/fixtures/production-payment-pool-cascade.json", "utf8")) as IncidentFixture;
+  const result = correlate(fixture);
+  const downstream = result.candidates.find((candidate) => candidate.cause === "downstream_timeout");
+  const release = result.candidates.find((candidate) => candidate.cause === "bad_release");
+
+  assert.equal(result.timeline.length, 40);
+  assert.equal(result.leading_cause, "downstream_timeout");
+  assert.equal(result.confidence, "high");
+  assert.ok(downstream && release && downstream.score >= release.score + 3);
+  assert.equal(downstream?.score, 21);
+  assert.deepEqual(downstream?.factors.map((factor) => factor.name), ["propagation_order", "trace_link"]);
+  assert.deepEqual(downstream?.factors.map((factor) => factor.evidence_ids.length), [10, 10]);
+  assert.ok(result.next_checks.some((check) => check.includes("postgres-primary")));
+  assert.ok(result.next_checks.some((check) => check.includes("trace-cascade-a")));
+});
+
 test("all Node SDK error types participate in correlation", async () => {
   const fixture = JSON.parse(await readFile("demo/fixtures/deployment-regression.json", "utf8")) as IncidentFixture;
   const events = fixture.events.map((event) => event.source === "node_sdk" ? { ...event, event_type: "database_timeout", severity: "critical" as const } : event);

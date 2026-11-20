@@ -44,6 +44,7 @@ function factorTitle(value: string): string {
     case "entity_match": return "Same service and environment";
     case "version_match": return "Same deployed version";
     case "propagation_order": return "Dependency failed first";
+    case "trace_link": return "Shared traces link both services";
     case "resource_signal": return "Direct workload failure";
     case "route_specificity": return "A specific request path failed";
     case "counterevidence": return "Failure existed before the change";
@@ -219,11 +220,12 @@ function drawCover(layout: ReportLayout, incident: DashboardIncidentDetail): voi
   document.font("Helvetica-Bold").fontSize(10).fillColor(COLORS.ink).text("Navigate this report", left, navY, { lineBreak: false });
   const navCards = [
     { number: "01", title: "Evidence assessment", detail: "Why this hypothesis", destination: "evidence" },
-    { number: "02", title: "Validation plan", detail: "What to verify next", destination: "validation" },
-    { number: "03", title: "Evidence timeline", detail: "What happened, in order", destination: "timeline" }
+    ...(incident.ai_explanation ? [{ number: "02", title: "AI evidence review", detail: "Optional cited guidance", destination: "ai-review" }] : []),
+    { number: incident.ai_explanation ? "03" : "02", title: "Validation plan", detail: "What to verify next", destination: "validation" },
+    { number: incident.ai_explanation ? "04" : "03", title: "Evidence timeline", detail: "What happened, in order", destination: "timeline" }
   ];
   const navGap = 10;
-  const navWidth = (width - navGap * 2) / 3;
+  const navWidth = (width - navGap * (navCards.length - 1)) / navCards.length;
   navCards.forEach((item, index) => {
     const x = left + index * (navWidth + navGap);
     const y = navY + 23;
@@ -238,6 +240,66 @@ function drawCover(layout: ReportLayout, incident: DashboardIncidentDetail): voi
   document.roundedRect(left, noteY, width, 40, 6).fill(COLORS.warningSoft);
   document.font("Helvetica-Bold").fontSize(8).fillColor(COLORS.warning).text("IMPORTANT", left + 14, noteY + 12, { width: 62, lineBreak: false });
   document.font("Helvetica").fontSize(8).fillColor(COLORS.ink).text("This report prioritizes evidence for investigation. It does not prove root cause or measure customer impact.", left + 78, noteY + 11, { width: width - 92, lineGap: 2 });
+}
+
+function aiReviewCard(layout: ReportLayout, title: string, body: string, evidenceIds: string[]): void {
+  const { document } = layout;
+  const left = document.page.margins.left;
+  const width = contentWidth(document);
+  const bodyHeight = document.font("Helvetica").fontSize(9).heightOfString(printable(body), { width: width - 36, lineGap: 2 });
+  const ids = `Cited evidence: ${evidenceIds.join(", ")}`;
+  const idsHeight = document.font("Helvetica").fontSize(7.2).heightOfString(printable(ids), { width: width - 36, lineGap: 1 });
+  const height = Math.max(76, 52 + bodyHeight + idsHeight);
+  ensureSpace(layout, height + 10);
+  const y = document.y;
+  document.roundedRect(left, y, width, height, 8).lineWidth(0.7).fillAndStroke(COLORS.white, COLORS.faint);
+  document.rect(left, y, 5, height).fill("#7668c7");
+  document.font("Helvetica-Bold").fontSize(9.5).fillColor(COLORS.ink).text(printable(title), left + 18, y + 14, { width: width - 36 });
+  document.font("Helvetica").fontSize(9).fillColor(COLORS.ink).text(printable(body), left + 18, document.y + 6, { width: width - 36, lineGap: 2 });
+  document.font("Helvetica").fontSize(7.2).fillColor(COLORS.muted).text(printable(ids), left + 18, y + height - idsHeight - 10, { width: width - 36, lineGap: 1 });
+  document.y = y + height + 10;
+}
+
+function drawAiReview(layout: ReportLayout, incident: DashboardIncidentDetail): void {
+  const explanation = incident.ai_explanation;
+  if (!explanation) return;
+  sectionStart(layout, "AI evidence review", "Optional model-generated guidance grounded in the event IDs stored with this incident.", "ai-review");
+  const { document } = layout;
+  const left = document.page.margins.left;
+  const width = contentWidth(document);
+
+  const bannerY = document.y;
+  const causeHeight = document.font("Helvetica-Bold").fontSize(14).heightOfString(printable(explanation.likely_cause), { width: width - 36 });
+  const summaryHeight = document.font("Helvetica").fontSize(9.5).heightOfString(printable(explanation.summary), { width: width - 36, lineGap: 2 });
+  const bannerHeight = Math.max(112, 61 + causeHeight + summaryHeight);
+  document.roundedRect(left, bannerY, width, bannerHeight, 8).fill("#f0effb");
+  document.font("Helvetica-Bold").fontSize(7.5).fillColor("#5c50aa").text("AI-GENERATED HYPOTHESIS", left + 18, bannerY + 16, { characterSpacing: 0.8, lineBreak: false });
+  document.font("Helvetica-Bold").fontSize(14).fillColor(COLORS.ink).text(printable(explanation.likely_cause), left + 18, bannerY + 36, { width: width - 36 });
+  document.font("Helvetica").fontSize(9.5).fillColor(COLORS.ink).text(printable(explanation.summary), left + 18, document.y + 7, { width: width - 36, lineGap: 2 });
+  document.y = bannerY + bannerHeight + 14;
+
+  aiReviewCard(layout, "Why the model gave this assessment", explanation.confidence_basis, explanation.evidence.flatMap((item) => item.evidence_ids));
+  ensureSpace(layout, 42);
+  const observationsHeadingY = document.y;
+  document.font("Helvetica-Bold").fontSize(13).fillColor(COLORS.ink).text("Cited observations", left, observationsHeadingY, { lineBreak: false });
+  document.y = observationsHeadingY + 26;
+  explanation.evidence.forEach((item, index) => aiReviewCard(layout, `Observation ${index + 1}`, item.claim, item.evidence_ids));
+
+  ensureSpace(layout, 42);
+  const checksHeadingY = document.y;
+  document.font("Helvetica-Bold").fontSize(13).fillColor(COLORS.ink).text("Suggested investigation checks", left, checksHeadingY, { lineBreak: false });
+  document.y = checksHeadingY + 26;
+  explanation.next_checks.forEach((item, index) => aiReviewCard(layout, `Check ${index + 1}: ${item.action}`, item.reason, item.evidence_ids));
+
+  const limitations = explanation.limitations.map((item) => `- ${item}`).join("\n");
+  const limitationsHeight = document.font("Helvetica").fontSize(8.5).heightOfString(printable(limitations), { width: width - 36, lineGap: 2 });
+  ensureSpace(layout, limitationsHeight + 70);
+  const limitationsY = document.y;
+  document.roundedRect(left, limitationsY, width, limitationsHeight + 50, 8).fill(COLORS.warningSoft);
+  document.font("Helvetica-Bold").fontSize(8).fillColor(COLORS.warning).text("KNOWN LIMITS", left + 18, limitationsY + 13, { characterSpacing: 0.8, lineBreak: false });
+  document.font("Helvetica").fontSize(8.5).fillColor(COLORS.ink).text(printable(limitations), left + 18, limitationsY + 31, { width: width - 36, lineGap: 2 });
+  document.y = limitationsY + limitationsHeight + 62;
+  document.font("Helvetica").fontSize(7).fillColor(COLORS.muted).text(`Generated ${formatTimestamp(explanation.generated_at)} with ${printable(explanation.model)}. Validate this guidance against the deterministic ranking and raw timeline before remediation.`, left, document.y, { width, lineGap: 2 });
 }
 
 function drawCandidateRanking(layout: ReportLayout, incident: DashboardIncidentDetail): void {
@@ -271,12 +333,15 @@ function evidenceCard(layout: ReportLayout, title: string, description: string, 
   const background = kind === "supporting" ? COLORS.accentSoft : COLORS.warningSoft;
   const accent = kind === "supporting" ? COLORS.accent : COLORS.warning;
   const descriptionHeight = document.font("Helvetica").fontSize(9).heightOfString(printable(description), { width: width - 36, lineGap: 2 });
-  const observations = evidenceIds.flatMap((eventId) => {
+  const visibleEvidenceIds = evidenceIds.slice(0, 6);
+  const observations = visibleEvidenceIds.flatMap((eventId) => {
     const event = timeline.find((candidate) => candidate.event_id === eventId);
     return event ? [evidenceObservation(event)] : [];
-  }).map((observation) => `- ${observation}`).join("\n");
-  const observationsHeight = document.font("Helvetica").fontSize(8).heightOfString(printable(observations), { width: width - 36, lineGap: 2 });
-  const ids = `Traceability: ${evidenceIds.join(", ")}`;
+  }).map((observation) => `- ${observation}`);
+  if (evidenceIds.length > visibleEvidenceIds.length) observations.push(`- ${evidenceIds.length - visibleEvidenceIds.length} additional linked events are preserved in the evidence timeline.`);
+  const observationText = observations.join("\n");
+  const observationsHeight = document.font("Helvetica").fontSize(8).heightOfString(printable(observationText), { width: width - 36, lineGap: 2 });
+  const ids = `Traceability: ${visibleEvidenceIds.join(", ")}${evidenceIds.length > visibleEvidenceIds.length ? ` (+${evidenceIds.length - visibleEvidenceIds.length} more in timeline)` : ""}`;
   const idsHeight = document.font("Helvetica").fontSize(7.2).heightOfString(printable(ids), { width: width - 40, lineGap: 1 });
   const height = Math.max(108, 74 + descriptionHeight + observationsHeight + idsHeight);
   ensureSpace(layout, height + 10);
@@ -288,7 +353,7 @@ function evidenceCard(layout: ReportLayout, title: string, description: string, 
   document.font("Helvetica").fontSize(9).fillColor(COLORS.ink).text(printable(description), left + 18, y + 37, { width: width - 36, lineGap: 2 });
   const observationsY = y + 45 + descriptionHeight;
   document.font("Helvetica-Bold").fontSize(7.5).fillColor(accent).text("LINKED OBSERVATIONS", left + 18, observationsY, { characterSpacing: 0.7, lineBreak: false });
-  document.font("Helvetica").fontSize(8).fillColor(COLORS.ink).text(printable(observations), left + 18, observationsY + 15, { width: width - 36, lineGap: 2 });
+  document.font("Helvetica").fontSize(8).fillColor(COLORS.ink).text(printable(observationText), left + 18, observationsY + 15, { width: width - 36, lineGap: 2 });
   document.font("Helvetica").fontSize(7.2).fillColor(COLORS.muted).text(printable(ids), left + 18, y + height - idsHeight - 11, { width: width - 36, lineGap: 1 });
   document.y = y + height + 10;
 }
@@ -363,8 +428,7 @@ function drawValidationPlan(layout: ReportLayout, incident: DashboardIncidentDet
   const contextY = document.y;
   document.roundedRect(left, contextY, width, 76, 8).fill(COLORS.accentSoft);
   document.font("Helvetica-Bold").fontSize(8).fillColor(COLORS.accentDark).text("INVESTIGATION CONTEXT", left + 16, contextY + 13, { characterSpacing: 0.8, lineBreak: false });
-  const context = incident.brief.context ?? incident.brief.observed_scope;
-  document.font("Helvetica").fontSize(9).fillColor(COLORS.ink).text(printable(context), left + 16, contextY + 31, { width: width - 32, height: 38, ellipsis: true, lineGap: 2 });
+  document.font("Helvetica").fontSize(9).fillColor(COLORS.ink).text(printable(incident.brief.observed_scope), left + 16, contextY + 31, { width: width - 32, height: 38, ellipsis: true, lineGap: 2 });
   document.y = contextY + 92;
 
   incident.next_checks.forEach((check, index) => validationCard(layout, check, index));
@@ -472,6 +536,7 @@ function writeReport(document: PDFKit.PDFDocument, incident: DashboardIncidentDe
   const layout: ReportLayout = { document, pageSections: ["Executive summary"], activeSection: "Executive summary" };
   drawCover(layout, incident);
   drawEvidenceAssessment(layout, incident);
+  drawAiReview(layout, incident);
   drawValidationPlan(layout, incident);
   drawTimeline(layout, incident);
 

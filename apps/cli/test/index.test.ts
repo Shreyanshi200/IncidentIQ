@@ -1,8 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { createDatabase } from "../src/database.js";
 
 const run = promisify(execFile);
 const cli = fileURLToPath(new URL("../src/index.js", import.meta.url));
@@ -27,4 +29,12 @@ test("fixture validate accepts a canonical fixture", async () => {
 test("keys create can create a read key", { skip: !databaseUrl }, async () => {
   const { stdout } = await run(process.execPath, [cli, "keys", "create", "--scope", "read"], { env: process.env });
   assert.match(stdout, /Read API key \(shown once\): iiq_/);
+  const key = stdout.match(/iiq_[A-Za-z0-9_-]+/)?.[0];
+  assert.ok(key);
+  const database = createDatabase(databaseUrl);
+  try {
+    await database.deleteFrom("api_keys").where("key_hash", "=", createHash("sha256").update(key).digest("hex")).execute();
+  } finally {
+    await database.destroy();
+  }
 });

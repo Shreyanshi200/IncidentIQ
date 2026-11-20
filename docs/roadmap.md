@@ -1,12 +1,11 @@
 # Release roadmap
 
-IncidentIQ is currently a single-operator, self-hosted incident intelligence platform. Version 0.7.1 is the latest completed product release; completed changes are listed in the [changelog](../CHANGELOG.md).
+IncidentIQ is currently a single-operator, self-hosted incident intelligence platform. Version 0.8.0 is the latest completed product release. Completed changes are listed in the [changelog](../CHANGELOG.md).
 
 ## Planned releases
 
 | Version | Outcome |
 | --- | --- |
-| 0.8.0 | Evidence-bounded AI explanations and suggested next investigation steps, grounded only in stored evidence |
 | 0.8.1 | Operational polish: safer API-key handling, retention controls, cost controls, and production guardrails |
 | 0.9.0 | ClickHouse as an optional scalable store for historical evidence and investigations |
 | 0.9.1 | Kafka-based streaming ingestion for high-volume, near-real-time evidence delivery |

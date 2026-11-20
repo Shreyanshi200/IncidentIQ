@@ -1,9 +1,10 @@
-import { Injectable } from "@nestjs/common";
+import { ConflictException, Injectable } from "@nestjs/common";
 import { sql } from "kysely";
 import type { NormalizedEvent } from "@incidentiqhq/event-schema";
 import { DatabaseService } from "./database.js";
 import { DashboardSessionService } from "./dashboard-session.service.js";
 import { createIncidentReportPdf } from "./incident-report.js";
+import { AiExplanationService, type AiExplanation, storedAiExplanation } from "./ai-explanation.service.js";
 
 export interface DashboardIncidentFilters {
   service?: string;
@@ -61,7 +62,6 @@ export interface DashboardCauseCandidate {
 
 export interface DashboardInvestigationBrief {
   headline: string;
-  context?: string;
   summary: string;
   observed_scope: string;
   supporting_evidence: DashboardEvidenceFactor[];
@@ -73,6 +73,8 @@ export interface DashboardIncidentDetail extends DashboardIncident {
   brief: DashboardInvestigationBrief;
   timeline: DashboardTimelineEvent[];
   next_checks: string[];
+  ai_available: boolean;
+  ai_explanation?: AiExplanation;
 }
 
 export interface DashboardIncidentReport {
@@ -131,7 +133,11 @@ function duration(milliseconds: number): string {
 
 @Injectable()
 export class DashboardService {
-  constructor(private readonly database: DatabaseService, private readonly sessions: DashboardSessionService) {}
+  constructor(
+    private readonly database: DatabaseService,
+    private readonly sessions: DashboardSessionService,
+    private readonly ai: AiExplanationService
+  ) {}
 
   async overview(cookie: string | undefined): Promise<DashboardOverview> {
     const tenantId = await this.sessions.tenantId(cookie);
@@ -288,13 +294,45 @@ export class DashboardService {
       ...(resource === null ? {} : { resource }),
       attributes: attributes as Record<string, unknown>
     }));
+    const eventIds = new Set(timeline.map((event) => event.event_id));
+    const aiExplanation = storedAiExplanation(record(row.investigation)?.ai_explanation, eventIds);
 
     return {
       ...this.summary(row),
       brief: this.brief(row.leading_cause, row.confidence, row.investigation, timeline),
       timeline,
-      next_checks: this.nextChecks(row.investigation)
+      next_checks: this.nextChecks(row.investigation),
+      ai_available: this.ai.available(),
+      ...(aiExplanation ? { ai_explanation: aiExplanation } : {})
     };
+  }
+
+  async explainIncident(cookie: string | undefined, incidentId: string): Promise<AiExplanation | undefined> {
+    const tenantId = await this.sessions.tenantId(cookie);
+    const row = await this.database.db
+      .selectFrom("incidents")
+      .select(["investigation", sql<string>`xmin::text`.as("row_version")])
+      .where("incident_id", "=", incidentId)
+      .where("tenant_id", "=", tenantId)
+      .executeTakeFirst();
+    if (!row) return undefined;
+
+    const incident = await this.incident(cookie, incidentId);
+    if (!incident) return undefined;
+    if (incident.ai_explanation) return incident.ai_explanation;
+
+    const explanation = await this.ai.generate(incident);
+    const investigation = record(row.investigation) ?? {};
+    const updated = await this.database.db
+      .updateTable("incidents")
+      .set({ investigation: { ...investigation, ai_explanation: explanation }, updated_at: explanation.generated_at })
+      .where("incident_id", "=", incidentId)
+      .where("tenant_id", "=", tenantId)
+      .where(sql<boolean>`xmin::text = ${row.row_version}`)
+      .returning("incident_id")
+      .executeTakeFirst();
+    if (!updated) throw new ConflictException("The incident changed while the explanation was generated; try again");
+    return explanation;
   }
 
   async incidentReport(cookie: string | undefined, incidentId: string): Promise<DashboardIncidentReport | undefined> {
@@ -330,9 +368,8 @@ export class DashboardService {
     investigation: unknown,
     timeline: DashboardTimelineEvent[]
   ): DashboardInvestigationBrief {
-    const candidates = this.candidates(investigation);
+    const candidates = this.candidates(investigation, timeline);
     const storedInvestigation = record(investigation);
-    const scenario = storedInvestigation?.scenario;
     const correlationWindowMs = typeof storedInvestigation?.correlation_window_ms === "number" ? storedInvestigation.correlation_window_ms : undefined;
     const leading = candidates.find((candidate) => candidate.cause === leadingCause) ?? candidates[0];
     const factors = leading?.factors.map((factor) => ({ ...factor, description: this.factorDescription(factor, timeline, correlationWindowMs) })) ?? [];
@@ -344,8 +381,7 @@ export class DashboardService {
 
     return {
       headline: this.causeHeadline(leadingCause),
-      ...(typeof scenario === "string" && scenario.trim() ? { context: scenario } : {}),
-      summary: this.causeSummary(leadingCause, confidence, timeline),
+      summary: this.causeSummary(leadingCause, confidence, timeline, leading?.factors ?? []),
       observed_scope: `${timeline.length} linked events from ${sources.size} evidence source${sources.size === 1 ? "" : "s"} span ${window}. ${impactSignals.length} error or critical signal${impactSignals.length === 1 ? " was" : "s were"} recorded; this is observed evidence, not a measurement of customer impact.`,
       supporting_evidence: factors.filter((factor) => factor.score > 0),
       counterevidence: factors.filter((factor) => factor.score < 0),
@@ -353,7 +389,7 @@ export class DashboardService {
     };
   }
 
-  private candidates(investigation: unknown): StoredCandidate[] {
+  private candidates(investigation: unknown, timeline: DashboardTimelineEvent[]): StoredCandidate[] {
     const rawCandidates = record(investigation)?.candidates;
     if (!Array.isArray(rawCandidates)) return [];
     return rawCandidates.flatMap((value) => {
@@ -364,8 +400,25 @@ export class DashboardService {
         if (!factor || typeof factor.name !== "string" || typeof factor.score !== "number" || !Array.isArray(factor.evidence_ids) || !factor.evidence_ids.every((id) => typeof id === "string")) return [];
         return [{ name: factor.name, score: factor.score, evidence_ids: factor.evidence_ids as string[] }];
       });
-      return [{ cause: candidate.cause, score: candidate.score, factors }];
-    });
+      const grouped = new Map<string, StoredFactor & { occurrences: number }>();
+      for (const factor of factors) {
+        const factorServices = new Set(factor.evidence_ids.flatMap((eventId) => {
+          const event = timeline.find((candidateEvent) => candidateEvent.event_id === eventId);
+          return event ? [event.service] : [];
+        }));
+        const name = candidate.cause === "downstream_timeout" && factor.name === "entity_match" && factorServices.size > 1 ? "trace_link" : factor.name;
+        const current = grouped.get(name);
+        if (!current) {
+          grouped.set(name, { ...factor, name, evidence_ids: [...new Set(factor.evidence_ids)], occurrences: 1 });
+          continue;
+        }
+        if (current.occurrences < 3) current.score += factor.score;
+        current.occurrences += 1;
+        current.evidence_ids = [...new Set([...current.evidence_ids, ...factor.evidence_ids])];
+      }
+      const aggregated = [...grouped.values()].map(({ occurrences: _occurrences, ...factor }) => factor);
+      return [{ cause: candidate.cause, score: aggregated.reduce((total, factor) => total + factor.score, 0), factors: aggregated }];
+    }).sort((left, right) => right.score - left.score || left.cause.localeCompare(right.cause));
   }
 
   private causeHeadline(cause: string): string {
@@ -378,11 +431,10 @@ export class DashboardService {
     }
   }
 
-  private causeSummary(cause: string, confidence: string, timeline: DashboardTimelineEvent[]): string {
+  private causeSummary(cause: string, confidence: string, timeline: DashboardTimelineEvent[], factors: StoredFactor[]): string {
     const deployment = timeline.find((event) => event.event_type === "deployment");
     const error = timeline.find((event) => event.source === "node_sdk" && (event.severity === "error" || event.severity === "critical"));
     const resource = timeline.find((event) => event.event_type === "oom_killed" || event.event_type === "crash_loop_back_off");
-    const dependencyError = timeline.find((event) => stringAttribute(event, "dependency"));
     const version = error?.version ?? deployment?.version ?? "the deployed version";
     const route = stringAttribute(error, "route") ?? "an application request";
 
@@ -392,8 +444,19 @@ export class DashboardService {
     if (cause === "resource_exhaustion" && resource) {
       return `${resource.resource ?? "The affected workload"} reported ${resource.event_type.replaceAll("_", " ")}. Application and workload evidence in the same window make resource exhaustion the strongest hypothesis, but resource metrics should confirm it.`;
     }
-    if (cause === "downstream_timeout" && dependencyError) {
-      return `A failure in ${stringAttribute(dependencyError, "dependency") ?? "a downstream dependency"} appeared before the affected service on the same trace. The ordering supports propagation from the dependency, but its own health data should confirm the origin.`;
+    if (cause === "downstream_timeout") {
+      const propagation = factors.find((factor) => factor.name === "propagation_order");
+      const evidence = propagation?.evidence_ids.flatMap((eventId) => {
+        const event = timeline.find((candidate) => candidate.event_id === eventId);
+        return event ? [event] : [];
+      }) ?? [];
+      const [downstream, upstream] = evidence;
+      const traces = new Set(evidence.flatMap((event) => event.trace_id ? [event.trace_id] : []));
+      if (downstream && upstream) {
+        const count = traces.size || 1;
+        return `${count} correlated trace${count === 1 ? "" : "s"} show ${downstream.service} failures preceding ${upstream.service} failures. The repeated ordering makes downstream propagation the leading ${confidence}-confidence hypothesis; it does not identify the initiating code, configuration, or infrastructure fault.`;
+      }
+      return `Correlated application failures make downstream propagation the leading ${confidence}-confidence hypothesis, but the initiating fault has not been identified.`;
     }
     return "The current candidates are too close or too weak to identify one likely cause. Collect the missing baseline, trace, or resource evidence before choosing a remediation.";
   }
@@ -417,6 +480,12 @@ export class DashboardService {
         if (!service) return "The linked evidence points to the same affected service.";
         return `Every linked signal names ${service}${environment ? ` in ${environment}` : ""}. This shows the deployment and failure belong to the same workload rather than unrelated services, although identity alone does not establish cause.`;
       }
+      case "trace_link": {
+        const traces = new Set(evidence.flatMap((event) => event.trace_id ? [event.trace_id] : []));
+        const services = [...new Set(evidence.map((event) => event.service))];
+        const traceCount = traces.size || Math.ceil(evidence.length / 2);
+        return `${traceCount} shared trace${traceCount === 1 ? "" : "s"} link ${services.join(" and ") || "the affected services"}${environment ? ` in ${environment}` : ""}. This establishes a cross-service propagation path, but does not by itself prove where the failure originated.`;
+      }
       case "version_match": {
         const version = first?.version && first.version === second?.version ? first.version : first?.version ?? second?.version;
         return version
@@ -425,6 +494,10 @@ export class DashboardService {
       }
       case "propagation_order": {
         if (!first || !second) return "The dependency failure appeared before the upstream failure on the same trace.";
+        const traces = new Set(evidence.flatMap((event) => event.trace_id ? [event.trace_id] : []));
+        if (traces.size > 1) {
+          return `Across ${traces.size} shared traces, ${first.service} failures appeared before ${second.service} failures. The repeated order supports downstream-to-upstream propagation instead of a single coincidental timeout.`;
+        }
         const trace = first.trace_id ?? second.trace_id;
         return `The ${this.eventDescription(first)} appeared before ${this.eventDescription(second)}${trace ? ` on trace ${trace}` : ""}. That order is consistent with a downstream failure propagating to the affected service.`;
       }

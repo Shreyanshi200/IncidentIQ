@@ -6,6 +6,7 @@ import { ApiKeysService } from "../src/api-keys.service.js";
 import { createApp } from "../src/app.js";
 import { DatabaseService } from "../src/database.js";
 import { configuredWindowMs } from "../src/incident-detection.service.js";
+import { clearTestTenants } from "./database-cleanup.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 
@@ -18,10 +19,10 @@ test("incident window settings use validated minute values", () => {
 
 test("error signals create one incident with nearby timeline evidence", { skip: !databaseUrl }, async () => {
   const app = await createApp();
+  const tenant = `test-${randomUUID()}`;
   await app.listen(0, "127.0.0.1");
   try {
     const baseUrl = `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}`;
-    const tenant = `test-${randomUUID()}`;
     const apiKey = (await app.get(ApiKeysService).create("ingest", tenant)).key;
     const suffix = randomUUID();
     const service = `orders-${suffix}`;
@@ -85,16 +86,17 @@ test("error signals create one incident with nearby timeline evidence", { skip: 
     const evidence = await database.selectFrom("incident_events").select("event_id").where("incident_id", "=", incident.incident_id).orderBy("event_id").execute();
     assert.deepEqual(evidence.map((event) => event.event_id).sort(), [`deploy-${suffix}`, `error-${suffix}`, `restart-${suffix}`].sort());
   } finally {
+    await clearTestTenants(app.get(DatabaseService), tenant);
     await app.close();
   }
 });
 
 test("informational evidence does not open an incident", { skip: !databaseUrl }, async () => {
   const app = await createApp();
+  const tenant = `test-${randomUUID()}`;
   await app.listen(0, "127.0.0.1");
   try {
     const baseUrl = `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}`;
-    const tenant = `test-${randomUUID()}`;
     const apiKey = (await app.get(ApiKeysService).create("ingest", tenant)).key;
     const service = `catalog-${randomUUID()}`;
     const request = await fetch(`${baseUrl}/v1/events/batch`, {
@@ -119,6 +121,7 @@ test("informational evidence does not open an incident", { skip: !databaseUrl },
     const incident = await app.get(DatabaseService).db.selectFrom("incidents").select("incident_id").where("service", "=", service).executeTakeFirst();
     assert.equal(incident, undefined);
   } finally {
+    await clearTestTenants(app.get(DatabaseService), tenant);
     await app.close();
   }
 });

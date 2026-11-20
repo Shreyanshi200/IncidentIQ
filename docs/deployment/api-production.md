@@ -50,9 +50,10 @@ Edit `~/incidentiq-production/.env`. Replace all placeholders:
 
 - `INCIDENTIQ_API_IMAGE` — an immutable `sha-<commit-sha>` tag from a successful merge to `main`;
 - `DATABASE_URL` — the real PostgreSQL connection string, including the provider's TLS settings;
-- `INCIDENTIQ_SESSION_SECRET` — at least 32 random bytes used to sign short-lived dashboard sessions; and
+- `INCIDENTIQ_SESSION_SECRET` — at least 32 random bytes used to sign short-lived dashboard sessions;
 - `INCIDENTIQ_INCIDENT_GAP_MINUTES` — positive minutes of inactivity after which a matching error starts a new incident, normally `10`;
-- `INCIDENTIQ_CONTEXT_LOOKBACK_MINUTES` — positive minutes of preceding evidence included and evaluated for cause correlation, normally `10`; and
+- `INCIDENTIQ_CONTEXT_LOOKBACK_MINUTES` — positive minutes of preceding evidence included and evaluated for cause correlation, normally `10`;
+- optional `OPENAI_API_KEY` and `INCIDENTIQ_AI_MODEL` — set both only when your data policy permits OpenAI to process selected incident evidence; and
 - `PORT` — normally leave this as `3000`.
 
 Keep `.env` readable only by the deployment operator. It contains the database password.
@@ -72,6 +73,7 @@ Do not confuse the server secret with the API keys created later:
 | `INCIDENTIQ_SESSION_SECRET` | Signs eight-hour browser session cookies | API server `.env` or managed secret store |
 | Ingestion key (`iiq_...`) | Lets an integration send evidence | Integration secret store; IncidentIQ keeps only its hash |
 | Read key (`iiq_...`) | Lets an operator open one tenant's dashboard | Operator password manager; IncidentIQ keeps only its hash |
+| `OPENAI_API_KEY` | Optional operator-requested AI explanations | API server secret manager; never the dashboard or an integration |
 
 ```sh
 chmod 600 ~/incidentiq-production/.env
@@ -273,6 +275,8 @@ curl --fail --silent --show-error https://incidentiq.example.com/ | grep -q '<ti
 ```
 
 Open `https://incidentiq.example.com` in a browser, paste the read key created in step 3, refresh the page once, then select **Sign out**. The raw read key is sent once and replaced by an eight-hour `HttpOnly`, `Secure`, `SameSite=Strict` cookie. The stable session secret keeps valid sessions working across API restarts.
+
+If AI explanations are enabled, open a saved incident and generate one explanation. Confirm that the result is labeled **AI-generated**, each observation and check links to stored evidence, and a later PDF contains the optional AI evidence review. Read the [AI explanations guide](../ai-explanations.md) before production use; the selected redacted incident is sent to OpenAI with response storage disabled.
 
 ## 7. Connect integrations
 

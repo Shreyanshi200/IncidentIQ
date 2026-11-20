@@ -4,6 +4,19 @@ Notable IncidentIQ changes are recorded here. Planned work belongs in the [relea
 
 ## Unreleased
 
+## 0.8.0 - Evidence-bounded AI explanations
+
+- Added optional, operator-requested OpenAI explanations grounded in one tenant-scoped incident.
+- Required structured output with valid event-ID citations and rejected incomplete or ungrounded responses.
+- Cached valid explanations until new evidence changes the incident, while preserving deterministic fallback.
+- Added cited AI guidance to the dashboard and to PDF reports generated afterward.
+- Expanded the canonical fixtures into a four-scenario AI validation pack covering release, downstream, resource, and ambiguous failures.
+- Added a 40-event, multi-service payment-pool cascade for rigorous human-versus-platform investigation testing.
+- Aggregated repeated correlation factors, capped volume-based score inflation, and clarified cross-service trace evidence in dashboards and reports.
+- Removed fixture-authored scenario conclusions from investigation briefs and now derive downstream summaries from correlated event pairs.
+- Added explicit tenant-data cleanup for repeatable local tests while preserving API keys and migrations.
+- Split incident detail into deep-linked Analysis, Evidence, and AI Review tabs, with cross-tab evidence navigation and consistent resource highlighting.
+
 ### Documentation
 
 - Reorganized the README with concise navigation, a two-column product gallery, a Quick start, and dedicated architecture, changelog, and roadmap references.

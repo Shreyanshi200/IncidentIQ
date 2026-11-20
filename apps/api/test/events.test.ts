@@ -6,19 +6,21 @@ import { ApiKeysService } from "../src/api-keys.service.js";
 import { normalizeAlertmanagerWebhook } from "../src/alertmanager.service.js";
 import { createApp } from "../src/app.js";
 import { DatabaseService } from "../src/database.js";
+import { clearTestTenants } from "./database-cleanup.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 
 test("ingestion accepts, redacts, deduplicates, and rejects invalid batches", { skip: !databaseUrl }, async () => {
   const app = await createApp();
+  const tenant = `test-${randomUUID()}`;
   await app.listen(0, "127.0.0.1");
   try {
     const baseUrl = `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}`;
-    const apiKey = (await app.get(ApiKeysService).create("ingest")).key;
+    const apiKey = (await app.get(ApiKeysService).create("ingest", tenant)).key;
     const event = {
       event_id: `api-test-${randomUUID()}`,
       occurred_at: "2026-10-23T12:00:00.000Z",
-      tenant_id: "local",
+      tenant_id: tenant,
       environment: "local",
       service: "orders",
       source: "node_sdk",
@@ -57,10 +59,11 @@ test("ingestion accepts, redacts, deduplicates, and rejects invalid batches", { 
     assert.equal((await alertRequest()).status, 401);
     assert.deepEqual(await (await alertRequest(`Bearer ${apiKey}`)).json(), { accepted: 1, duplicates: 0 });
     assert.deepEqual(await (await alertRequest(`Bearer ${apiKey}`)).json(), { accepted: 0, duplicates: 1 });
-    const alert = normalizeAlertmanagerWebhook(alertPayload, "local")[0]!;
+    const alert = normalizeAlertmanagerWebhook(alertPayload, tenant)[0]!;
     const storedAlert = await app.get(DatabaseService).db.selectFrom("source_events").select(["source", "event_type", "resource"]).where("event_id", "=", alert.event_id).executeTakeFirstOrThrow();
     assert.deepEqual(storedAlert, { source: "alertmanager", event_type: "latency_spike", resource: "service/payments/orders" });
   } finally {
+    await clearTestTenants(app.get(DatabaseService), tenant);
     await app.close();
   }
 });

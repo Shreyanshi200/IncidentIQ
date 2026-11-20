@@ -2,11 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
+import { sql } from "kysely";
 import { ApiKeysService } from "../src/api-keys.service.js";
+import { AiExplanationService } from "../src/ai-explanation.service.js";
 import { createApp } from "../src/app.js";
 import { DatabaseService } from "../src/database.js";
-import type { DashboardIncidentPage, DashboardOverview, DashboardTimelineEvent } from "../src/dashboard.service.js";
+import { DashboardService, type DashboardIncidentPage, type DashboardInvestigationBrief, type DashboardOverview, type DashboardTimelineEvent } from "../src/dashboard.service.js";
 import { describeReportEvent } from "../src/incident-report.js";
+import { clearTestTenants } from "./database-cleanup.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 
@@ -24,13 +27,58 @@ test("incident reports explain recovery evidence instead of exposing only attrib
   assert.equal(describeReportEvent({ ...base, source: "alertmanager", event_type: "alert_resolved", attributes: { status: "resolved", alertname: "CheckoutHighErrorRate", current_value: "0.8%", threshold: "5%" } }), "CheckoutHighErrorRate resolved at 0.8%; configured threshold is 5%.");
 });
 
+test("dashboard aggregates and relabels legacy repeated cross-service factors", () => {
+  const timeline: DashboardTimelineEvent[] = Array.from({ length: 5 }, (_, index) => String.fromCharCode(97 + index)).flatMap((suffix, index) => [
+    {
+      event_id: `payment-${suffix}`,
+      occurred_at: `2026-11-20T10:0${index + 1}:00.000Z`,
+      service: "payments-api",
+      environment: "production",
+      source: "node_sdk",
+      event_type: "database_timeout",
+      severity: "error",
+      trace_id: `trace-${suffix}`,
+      attributes: { dependency: "postgres-primary" }
+    },
+    {
+      event_id: `checkout-${suffix}`,
+      occurred_at: `2026-11-20T10:0${index + 1}:02.000Z`,
+      service: "checkout-api",
+      environment: "production",
+      source: "node_sdk",
+      event_type: "checkout_failed",
+      severity: "error",
+      trace_id: `trace-${suffix}`,
+      attributes: { dependency: "payments-api" }
+    }
+  ]);
+  const factors = Array.from({ length: 5 }, (_, index) => String.fromCharCode(97 + index)).flatMap((suffix) => [
+    { name: "propagation_order", score: 4, evidence_ids: [`payment-${suffix}`, `checkout-${suffix}`] },
+    { name: "entity_match", score: 3, evidence_ids: [`payment-${suffix}`, `checkout-${suffix}`] }
+  ]);
+  const service = new DashboardService({} as never, {} as never, {} as never);
+  const brief = (service as unknown as {
+    brief(cause: string, confidence: string, investigation: unknown, events: DashboardTimelineEvent[]): DashboardInvestigationBrief;
+  }).brief("downstream_timeout", "high", { candidates: [{ cause: "downstream_timeout", score: 35, factors }] }, timeline);
+
+  assert.deepEqual(brief.supporting_evidence.map((factor) => factor.name), ["propagation_order", "trace_link"]);
+  assert.deepEqual(brief.supporting_evidence.map((factor) => factor.score), [12, 9]);
+  assert.deepEqual(brief.supporting_evidence.map((factor) => factor.evidence_ids.length), [10, 10]);
+  assert.equal(brief.candidates[0]?.score, 21);
+  assert.match(brief.summary, /5 correlated traces show payments-api failures preceding checkout-api failures/i);
+  assert.doesNotMatch(brief.summary, /postgres-primary/i);
+  assert.equal("context" in brief, false);
+  assert.match(brief.supporting_evidence[0]?.description ?? "", /across 5 shared traces.*payments-api.*before checkout-api/i);
+  assert.match(brief.supporting_evidence[1]?.description ?? "", /5 shared traces link payments-api and checkout-api/i);
+});
+
 test("dashboard exchanges a read key for a tenant-scoped secure session", { skip: !databaseUrl }, async () => {
   const app = await createApp();
+  const tenant = `test-${randomUUID()}`;
   await app.listen(0, "127.0.0.1");
   try {
     const baseUrl = `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}`;
     const apiKeys = app.get(ApiKeysService);
-    const tenant = `test-${randomUUID()}`;
     const ingestionKey = (await apiKeys.create("ingest", tenant)).key;
     const readKey = (await apiKeys.create("read", tenant)).key;
     const service = `dashboard-${randomUUID()}`;
@@ -90,18 +138,19 @@ test("dashboard exchanges a read key for a tenant-scoped secure session", { skip
     assert.equal(logout.status, 200);
     assert.match(logout.headers.get("set-cookie") ?? "", /incidentiq_session=;.*Max-Age=0.*Secure/);
   } finally {
+    await clearTestTenants(app.get(DatabaseService), tenant);
     await app.close();
   }
 });
 
 test("dashboard lists tenant-scoped incidents, filters them, and returns their evidence timeline", { skip: !databaseUrl }, async () => {
   const app = await createApp();
+  const tenant = `test-${randomUUID()}`;
+  const otherTenant = `test-${randomUUID()}`;
   await app.listen(0, "127.0.0.1");
   try {
     const baseUrl = `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}`;
     const apiKeys = app.get(ApiKeysService);
-    const tenant = `test-${randomUUID()}`;
-    const otherTenant = `test-${randomUUID()}`;
     const ingestionKey = (await apiKeys.create("ingest", tenant)).key;
     const readKey = (await apiKeys.create("read", tenant)).key;
     const otherKey = (await apiKeys.create("ingest", otherTenant)).key;
@@ -200,6 +249,36 @@ test("dashboard lists tenant-scoped incidents, filters them, and returns their e
     assert.match(incident.brief.supporting_evidence.find((factor) => factor.name === "temporal_proximity")?.description ?? "", /deployment of version 1\.2\.3.*1 minute later.*checkout failed on \/checkout/i);
     assert.equal(incident.brief.candidates[0]?.cause, "bad_release");
     assert.ok(incident.next_checks.some((check) => check.includes("/checkout") && check.includes("1.2.3")));
+    let aiCalls = 0;
+    app.get(AiExplanationService).generate = async () => {
+      aiCalls += 1;
+      return {
+        summary: "The stored deployment and checkout failure support a release regression.",
+        likely_cause: "The checkout failure is linked to version 1.2.3.",
+        confidence_basis: "The deployment and failure share a version and occurred one minute apart.",
+        evidence: [{ claim: "The failure followed the deployment.", evidence_ids: events.slice(0, 2).map((event) => event.event_id) }],
+        next_checks: [{ action: "Compare the checkout change in version 1.2.3.", reason: "That release immediately preceded the failure.", evidence_ids: events.slice(0, 2).map((event) => event.event_id) }],
+        limitations: ["No pre-release error-rate baseline is stored."],
+        generated_at: "2026-11-19T10:04:00.000Z",
+        model: "test-model"
+      };
+    };
+    await app.get(DatabaseService).db
+      .updateTable("incidents")
+      .set({ updated_at: sql`'2026-11-19T10:03:00.123456Z'::timestamptz` })
+      .where("incident_id", "=", listed.items[0]!.incident_id)
+      .execute();
+    const explanationUrl = `${baseUrl}/v1/dashboard/incidents/${listed.items[0]?.incident_id}/ai-explanation`;
+    const explanationResponse = await fetch(explanationUrl, { method: "POST", headers: { cookie } });
+    assert.equal(explanationResponse.status, 201);
+    const explanation = await explanationResponse.json() as { model: string; evidence: Array<{ evidence_ids: string[] }> };
+    assert.equal(explanation.model, "test-model");
+    assert.deepEqual(explanation.evidence[0]?.evidence_ids, events.slice(0, 2).map((event) => event.event_id));
+    const cachedResponse = await fetch(explanationUrl, { method: "POST", headers: { cookie } });
+    assert.equal(cachedResponse.status, 201);
+    assert.equal(aiCalls, 1);
+    const refreshedDetail = await fetch(`${baseUrl}/v1/dashboard/incidents/${listed.items[0]?.incident_id}`, { headers: { cookie } });
+    assert.equal((await refreshedDetail.json() as { ai_explanation?: { model: string } }).ai_explanation?.model, "test-model");
     const reportResponse = await fetch(`${baseUrl}/v1/dashboard/incidents/${listed.items[0]?.incident_id}/report`, { headers: { cookie } });
     assert.equal(reportResponse.status, 200);
     assert.match(reportResponse.headers.get("content-type") ?? "", /application\/pdf/);
@@ -211,18 +290,21 @@ test("dashboard lists tenant-scoped incidents, filters them, and returns their e
     assert.equal(crossTenant.status, 404);
     const crossTenantReport = await fetch(`${baseUrl}/v1/dashboard/incidents/${otherIncident.incident_id}/report`, { headers: { cookie } });
     assert.equal(crossTenantReport.status, 404);
+    const crossTenantExplanation = await fetch(`${baseUrl}/v1/dashboard/incidents/${otherIncident.incident_id}/ai-explanation`, { method: "POST", headers: { cookie } });
+    assert.equal(crossTenantExplanation.status, 404);
   } finally {
+    await clearTestTenants(app.get(DatabaseService), tenant, otherTenant);
     await app.close();
   }
 });
 
 test("dashboard pages tenant-scoped incident lists with an opaque stable cursor", { skip: !databaseUrl }, async () => {
   const app = await createApp();
+  const tenant = `test-${randomUUID()}`;
   await app.listen(0, "127.0.0.1");
   try {
     const baseUrl = `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}`;
     const apiKeys = app.get(ApiKeysService);
-    const tenant = `test-${randomUUID()}`;
     const readKey = (await apiKeys.create("read", tenant)).key;
     const database = app.get(DatabaseService).db;
     const identifiers = Array.from({ length: 26 }, (_, index) => `page-${randomUUID()}-${index}`);
@@ -266,6 +348,7 @@ test("dashboard pages tenant-scoped incident lists with an opaque stable cursor"
     const malformed = await fetch(`${baseUrl}/v1/dashboard/incidents?cursor=not-a-cursor`, { headers: { cookie } });
     assert.equal(malformed.status, 400);
   } finally {
+    await clearTestTenants(app.get(DatabaseService), tenant);
     await app.close();
   }
 });
