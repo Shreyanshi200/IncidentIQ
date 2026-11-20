@@ -3,7 +3,7 @@ import type { IncidentFixture, NormalizedEvent } from "@incidentiqhq/event-schem
 export type Cause = "deployment_regression" | "resource_exhaustion" | "downstream_timeout" | "bad_release" | "ambiguous";
 
 export interface ScoreFactor {
-  name: "temporal_proximity" | "entity_match" | "version_match" | "propagation_order" | "resource_signal" | "route_specificity" | "counterevidence";
+  name: "temporal_proximity" | "entity_match" | "version_match" | "propagation_order" | "trace_link" | "resource_signal" | "route_specificity" | "counterevidence";
   score: number;
   evidence_ids: string[];
 }
@@ -26,6 +26,7 @@ export interface CorrelationResult {
 }
 
 const EVENT_WINDOW_MS = 10 * 60 * 1000;
+const MAX_REPEATED_FACTOR_OCCURRENCES = 3;
 
 export interface CorrelationOptions {
   eventWindowMs?: number;
@@ -53,8 +54,24 @@ function stringAttribute(event: NormalizedEvent, name: string): string | undefin
   return typeof value === "string" ? value : undefined;
 }
 
+function aggregateFactors(factors: ScoreFactor[]): ScoreFactor[] {
+  const grouped = new Map<ScoreFactor["name"], ScoreFactor & { occurrences: number }>();
+  for (const factor of factors) {
+    const current = grouped.get(factor.name);
+    if (!current) {
+      grouped.set(factor.name, { ...factor, evidence_ids: [...new Set(factor.evidence_ids)], occurrences: 1 });
+      continue;
+    }
+    if (current.occurrences < MAX_REPEATED_FACTOR_OCCURRENCES) current.score += factor.score;
+    current.occurrences += 1;
+    current.evidence_ids = [...new Set([...current.evidence_ids, ...factor.evidence_ids])];
+  }
+  return [...grouped.values()].map(({ occurrences: _occurrences, ...factor }) => factor);
+}
+
 function candidate(cause: CandidateScore["cause"], factors: ScoreFactor[]): CandidateScore {
-  return { cause, score: factors.reduce((total, factor) => total + factor.score, 0), factors };
+  const aggregated = aggregateFactors(factors);
+  return { cause, score: aggregated.reduce((total, factor) => total + factor.score, 0), factors: aggregated };
 }
 
 function deploymentCandidate(timeline: NormalizedEvent[], routeSpecific: boolean, eventWindowMs: number): CandidateScore {
@@ -96,7 +113,7 @@ function downstreamCandidate(timeline: NormalizedEvent[]): CandidateScore {
     const downstream = errors.find((event) => event.service === dependency && event.trace_id && event.trace_id === upstream.trace_id && timestamp(event) < timestamp(upstream));
     if (!downstream) continue;
     factors.push({ name: "propagation_order", score: 4, evidence_ids: [downstream.event_id, upstream.event_id] });
-    factors.push({ name: "entity_match", score: 3, evidence_ids: [downstream.event_id, upstream.event_id] });
+    factors.push({ name: "trace_link", score: 3, evidence_ids: [downstream.event_id, upstream.event_id] });
   }
   return candidate("downstream_timeout", factors);
 }

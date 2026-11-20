@@ -134,8 +134,9 @@ Open `http://localhost:5173`, paste the read key, and select **Open dashboard**.
 - PostgreSQL storage with migrations, idempotent event IDs, and duplicate-delivery protection.
 - Automatic incident creation and configurable time-window grouping for error and critical signals.
 - Deterministic candidate ranking with supporting evidence, counterevidence, confidence, and contextual next checks.
+- Optional, operator-requested AI explanations with strict structured output, event-ID citations, cached results, and deterministic fallback.
 - React dashboard with Overview and Investigations views, filtering, cursor pagination, readable timelines, and secure read-key sessions.
-- Navigable PDF incident reports containing the investigation summary, ranked candidates, validation plan, and complete evidence timeline.
+- Navigable PDF incident reports containing the investigation summary, ranked candidates, optional cited AI review, validation plan, and complete evidence timeline.
 - Fail-open Node.js SDK and GitHub Action, plus a read-only Kubernetes collector and Alertmanager webhook integration.
 - CLI workflows for setup, evidence inspection, fixtures, correlation, and saved incidents.
 
@@ -234,6 +235,7 @@ The gallery uses the included checkout regression fixture: a release followed by
 | [Getting started](docs/getting-started.md) | Detailed local setup, keys, integrations, and production pointers |
 | [Architecture](docs/architecture.md) | Components, end-to-end data flow, security boundaries, and infrastructure ownership |
 | [Dashboard](docs/dashboard.md) | Local or hosted dashboard setup and investigation workflow |
+| [AI explanations](docs/ai-explanations.md) | Optional OpenAI setup, evidence boundary, data handling, and production guidance |
 | [Automatic incidents](docs/automatic-incidents.md) | Incident opening, grouping, realistic fixtures, and current boundaries |
 | [Production deployment](docs/deployment/api-production.md) | HTTPS, PostgreSQL, static dashboard hosting, backups, upgrades, and rollback |
 | [Event data](docs/event-data.md) | Which event fields are generated, configured, or supplied by integrations |

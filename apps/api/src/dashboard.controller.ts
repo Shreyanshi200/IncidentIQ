@@ -1,6 +1,7 @@
 import { BadRequestException, Controller, Delete, Get, Headers, NotFoundException, Param, Post, Query, Res, StreamableFile } from "@nestjs/common";
 import { DashboardSessionService } from "./dashboard-session.service.js";
 import { type DashboardIncidentCursor, type DashboardIncidentDetail, type DashboardIncidentFilters, type DashboardIncidentPage, type DashboardOverview, DashboardService } from "./dashboard.service.js";
+import type { AiExplanation } from "./ai-explanation.service.js";
 
 interface HeaderResponse {
   setHeader(name: string, value: string): void;
@@ -90,6 +91,13 @@ export class DashboardController {
     const incident = await this.dashboard.incident(cookie, incidentId);
     if (!incident) throw new NotFoundException("Incident not found");
     return incident;
+  }
+
+  @Post("incidents/:incidentId/ai-explanation")
+  async explainIncident(@Headers("cookie") cookie: string | undefined, @Param("incidentId") incidentId: string): Promise<AiExplanation> {
+    const explanation = await this.dashboard.explainIncident(cookie, incidentId);
+    if (!explanation) throw new NotFoundException("Incident not found");
+    return explanation;
   }
 
   @Get("incidents/:incidentId/report")

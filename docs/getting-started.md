@@ -84,6 +84,10 @@ New `error` and `critical` events accepted by the API automatically open or enri
 
 The dashboard is a separate browser application. It requires its own read-only key, not the ingestion key used by integrations. Follow the [dashboard guide](dashboard.md) to create the key and open the local UI.
 
+## 8. Optional AI explanations
+
+The dashboard works without AI. To add operator-requested, evidence-bounded explanations, configure your own OpenAI API key and model on the API server, then restart it. Follow the [AI explanations guide](ai-explanations.md) for the exact values, data boundary, four-scenario test pack, and verification steps.
+
 ## Production notes
 
 The API needs a PostgreSQL database and must be reachable over HTTPS by remote producers such as GitHub-hosted runners. Use the [production API deployment guide](deployment/api-production.md) for a repeatable Docker, reverse-proxy, backup, and upgrade setup.

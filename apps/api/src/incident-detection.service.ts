@@ -106,7 +106,7 @@ export class IncidentDetectionService {
       .execute()).map(toEvent);
     const investigation = correlate({
       fixture_id: id,
-      scenario: `Automatically detected signals for ${event.service} in ${event.environment}`,
+      scenario: `Evidence automatically correlated for ${event.service} in ${event.environment}`,
       expected_cause: "automatic_detection",
       events: timeline
     } satisfies IncidentFixture, { eventWindowMs: this.contextLookbackMs });

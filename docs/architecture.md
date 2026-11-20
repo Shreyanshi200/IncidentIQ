@@ -21,6 +21,8 @@ flowchart LR
     CLI[CLI<br/>migrations · keys · inspection · fixtures]
   end
 
+  AI[OpenAI Responses API<br/>optional · operator-requested]
+
   SDK -->|batched application events| API
   GHA -->|deployment context| API
   K8S -->|workload failures| API
@@ -29,6 +31,7 @@ flowchart LR
   ENGINE -->|one transaction| DB
   DASH -->|session-cookie request| API
   API -->|tenant-scoped data| DASH
+  API <-->|one redacted incident<br/>structured cited output| AI
   CLI -->|operator query| DB
   DB -->|events and incidents| CLI
 ```
@@ -40,15 +43,16 @@ flowchart LR
 3. The shared event schema validates the payload. The API replaces configured secret-like attribute fields with `[REDACTED]` and assigns its own receipt time.
 4. PostgreSQL inserts the source event by unique event ID. A retry of the same event becomes a safe duplicate rather than another observation.
 5. For a newly inserted event, automatic detection opens or enriches an incident for the same tenant, service, and environment. The event and incident update run in the same database transaction.
-6. The deterministic correlation package ranks candidate causes from recorded timing, entity, version, route, dependency, and resource evidence. Scores prioritize investigation; they are not probabilities.
+6. The deterministic correlation package ranks candidate causes from recorded timing, entity, version, route, dependency, and resource evidence. Repeated factors are aggregated and their score contribution is capped after three occurrences, while every linked event remains traceable. Scores prioritize investigation; they are not probabilities.
 7. An operator uses a read key once to create a tenant-scoped dashboard session. The dashboard loads the overview, incident list, detail, timeline, and PDF report through the API.
-8. The CLI is an operator tool for migrations, key creation, evidence inspection, fixtures, and saved-incident workflows. It connects directly to PostgreSQL in the current single-operator architecture.
+8. When explicitly requested and configured, the API sends only that incident's redacted stored evidence to OpenAI. It accepts a structured response only when every claim and check cites event IDs from the incident, then caches the result until new evidence replaces the investigation.
+9. The CLI is an operator tool for migrations, key creation, evidence inspection, fixtures, and saved-incident workflows. It connects directly to PostgreSQL in the current single-operator architecture.
 
 ## Component responsibilities
 
 | Component | Location | Responsibility |
 | --- | --- | --- |
-| API | `apps/api` | Ingestion, Alertmanager webhook, authentication, validation, redaction, automatic incidents, dashboard endpoints, and PDF generation |
+| API | `apps/api` | Ingestion, Alertmanager webhook, authentication, validation, redaction, automatic incidents, optional AI explanation validation, dashboard endpoints, and PDF generation |
 | Dashboard | `apps/dashboard` | Secure Overview and Investigations interface for one read-key tenant |
 | CLI | `apps/cli` | Database initialization, key creation, fixture workflows, event listing, correlation, and incident inspection |
 | Event schema | `packages/event-schema` | Shared TypeScript event contract and runtime validation |
@@ -78,6 +82,7 @@ See the [event data guide](event-data.md) for field ownership and the source-spe
 - A read key starts an eight-hour signed browser session that can load only that tenant's dashboard data and reports.
 - The raw read key is not stored in browser storage; the session cookie is `HttpOnly` and `SameSite=Strict`, with `Secure` on HTTPS.
 - `INCIDENTIQ_SESSION_SECRET` signs browser sessions and is unrelated to either API key.
+- `OPENAI_API_KEY` is optional, remains server-side, and is sent only to OpenAI. Enabling it sends the selected incident's redacted operational evidence to that external processor.
 - PostgreSQL and the API container port should remain private behind an HTTPS reverse proxy.
 
 ## Infrastructure ownership
@@ -88,7 +93,8 @@ The current product is self-hosted. The operator provides and owns:
 - the API host or container platform and its HTTPS endpoint;
 - static hosting for the dashboard on the same origin as `/v1`;
 - GitHub, Kubernetes, Prometheus, Alertmanager, and application infrastructure; and
-- secret storage for ingestion keys, read keys, database credentials, and the session secret.
+- secret storage for ingestion keys, read keys, database credentials, and the session secret; and
+- an OpenAI account, API key, model choice, usage budget, and data-processing approval when optional AI explanations are enabled.
 
 IncidentIQ supplies the API and collector images, npm SDK, GitHub Action, database migrations, integration configuration, dashboard build, and operating guides. Kafka and ClickHouse are planned scale options, not requirements for the current release.
 
@@ -98,6 +104,6 @@ IncidentIQ supplies the API and collector images, npm SDK, GitHub Action, databa
 - The dashboard is single-operator and has no acknowledgement, assignment, or resolution workflow.
 - Automatic grouping is limited to one tenant, service, and environment; it does not yet merge dependency-wide incidents.
 - Kubernetes collection is namespace-scoped and keeps watch checkpoints in memory.
-- Correlation is evidence-bounded and deterministic. AI-generated explanations are planned but are not part of the current result.
+- Correlation remains evidence-bounded and deterministic. Optional AI output is a cited second opinion and never changes stored scores or grouping.
 
 For deployment details, follow the [production API deployment guide](deployment/api-production.md). For planned architectural changes, see the [roadmap](roadmap.md).

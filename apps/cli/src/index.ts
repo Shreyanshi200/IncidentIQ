@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { correlate } from "@incidentiqhq/correlation";
 import { SCHEMA_VERSION, type IncidentFixture, validateFixture } from "@incidentiqhq/event-schema";
-import { applyMigrations, createApiKey, createDatabase, getIncident, listEvents, listIncidents, loadFixture, saveInvestigation } from "./database.js";
+import { applyMigrations, clearTenantData, createApiKey, createDatabase, getIncident, listEvents, listIncidents, loadFixture, saveInvestigation } from "./database.js";
 import { formatIncidentList, formatInvestigation } from "./format.js";
 
 const [command, subcommand, target, option, format] = process.argv.slice(2);
@@ -41,6 +41,11 @@ try {
     await withDatabase(async (pool) => console.log(`${option === "read" ? "Read" : "Ingestion"} API key (shown once): ${await createApiKey(pool, option)}`));
   } else if (command === "init") {
     await withDatabase(async () => console.log("PostgreSQL is ready and migrations are applied."));
+  } else if (command === "data" && subcommand === "clear" && target === "--tenant" && option && format === "--confirm") {
+    await withDatabase(async (database) => {
+      const deleted = await clearTenantData(database, option);
+      console.log(`Cleared tenant ${option}: ${deleted.incidents} incidents and ${deleted.events} events. API keys were preserved.`);
+    });
   } else if (command === "fixture" && subcommand === "validate" && target) {
     console.log(`Valid fixture: ${(await readFixture(target)).fixture_id}`);
   } else if (command === "fixture" && subcommand === "load" && target) {
@@ -60,8 +65,8 @@ try {
     console.log(formatInvestigation(result));
   } else if (command === "events" && subcommand === "list") {
     await withDatabase(async (pool) => console.log(JSON.stringify(await listEvents(pool), null, 2)));
-  } else if (command === "incidents" && subcommand === "list") {
-    await withDatabase(async (pool) => console.log(formatIncidentList(await listIncidents(pool))));
+  } else if (command === "incidents" && subcommand === "list" && (!target || (target === "--tenant" && option))) {
+    await withDatabase(async (pool) => console.log(formatIncidentList(await listIncidents(pool, target === "--tenant" ? option : undefined))));
   } else if (command === "incidents" && subcommand === "explain" && target) {
     await withDatabase(async (pool) => {
       const incident = await getIncident(pool, target);
@@ -75,7 +80,7 @@ try {
       console.log(JSON.stringify(incident.investigation, null, 2));
     });
   } else {
-    throw new Error("Usage: incidentiq version | api start | api health | keys create --scope ingest|read | init | fixture validate <file> | fixture load <file> | correlate <fixture> [--save] | events list | incidents list | incidents explain <id> | incidents export <id> --format json");
+    throw new Error("Usage: incidentiq version | api start | api health | keys create --scope ingest|read | init | data clear --tenant <tenant> --confirm | fixture validate <file> | fixture load <file> | correlate <fixture> [--save] | events list | incidents list [--tenant <tenant>] | incidents explain <id> | incidents export <id> --format json");
   }
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error));

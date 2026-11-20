@@ -144,6 +144,14 @@ export async function listEvents(db: Kysely<Database>): Promise<StoredEvent[]> {
   }));
 }
 
+export async function clearTenantData(db: Kysely<Database>, tenantId: string): Promise<{ incidents: number; events: number }> {
+  return db.transaction().execute(async (transaction) => {
+    const incidents = await transaction.deleteFrom("incidents").where("tenant_id", "=", tenantId).returning("incident_id").execute();
+    const events = await transaction.deleteFrom("source_events").where("tenant_id", "=", tenantId).returning("event_id").execute();
+    return { incidents: incidents.length, events: events.length };
+  });
+}
+
 export async function saveInvestigation(db: Kysely<Database>, result: CorrelationResult): Promise<IncidentSummary> {
   const startedAt = result.timeline[0];
   const affectedEvent = result.timeline.at(-1);
@@ -187,8 +195,10 @@ export async function saveInvestigation(db: Kysely<Database>, result: Correlatio
   });
 }
 
-export async function listIncidents(db: Kysely<Database>): Promise<IncidentSummary[]> {
-  return db.selectFrom("incidents").select(["incident_id", "tenant_id", "service", "environment", "state", "started_at", "last_event_at", "event_count", "leading_cause", "confidence"]).orderBy("started_at", "desc").orderBy("incident_id").execute();
+export async function listIncidents(db: Kysely<Database>, tenantId?: string): Promise<IncidentSummary[]> {
+  let query = db.selectFrom("incidents").select(["incident_id", "tenant_id", "service", "environment", "state", "started_at", "last_event_at", "event_count", "leading_cause", "confidence"]);
+  if (tenantId) query = query.where("tenant_id", "=", tenantId);
+  return query.orderBy("started_at", "desc").orderBy("incident_id").execute();
 }
 
 export async function getIncident(db: Kysely<Database>, incidentId: string): Promise<StoredIncident | undefined> {
