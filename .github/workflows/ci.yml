@@ -37,6 +37,6 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm incidentiq init
+      - run: pnpm incidentiq:dev init
       - run: pnpm test
       - run: pnpm verify:npm-packages

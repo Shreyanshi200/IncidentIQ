@@ -20,6 +20,16 @@ export class AppController {
 
   @Get("health")
   async health(): Promise<{ status: "ok" }> {
+    return this.ready();
+  }
+
+  @Get("health/live")
+  live(): { status: "ok" } {
+    return { status: "ok" };
+  }
+
+  @Get("health/ready")
+  async ready(): Promise<{ status: "ok" }> {
     await sql`select 1`.execute(this.database.db);
     return { status: "ok" };
   }

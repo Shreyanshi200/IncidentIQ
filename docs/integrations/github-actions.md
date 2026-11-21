@@ -6,7 +6,7 @@ The IncidentIQ Action records one deployment event with GitHub's repository, com
 
 1. Start or deploy an IncidentIQ API as described in [Getting started](../getting-started.md).
 2. Ensure the API is reachable from the GitHub runner over HTTPS. `localhost` cannot be reached by GitHub-hosted runners.
-3. Create an ingestion key with `pnpm incidentiq keys create --scope ingest`.
+3. Create an ingestion key with `pnpm incidentiq keys create --scope ingest --tenant local --label github-actions`.
 4. In your repository's **Settings → Secrets and variables → Actions**, create:
    - Secret `INCIDENTIQ_API_KEY`: the raw `iiq_...` ingestion key.
    - Variable `INCIDENTIQ_API_URL`: the API base URL, for example `https://incidentiq.example.com`.

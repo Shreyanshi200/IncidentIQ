@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { sql } from "kysely";
 import { ApiKeysService } from "../src/api-keys.service.js";
@@ -134,6 +134,9 @@ test("dashboard exchanges a read key for a tenant-scoped secure session", { skip
     assert.ok(githubActions.event_count >= 1);
     assert.ok(githubActions.recent_event_count >= 1);
     assert.ok(!Number.isNaN(Date.parse(githubActions.last_event_at)));
+    const readRecord = await app.get(DatabaseService).db.selectFrom("api_keys").select("key_id").where("key_hash", "=", createHash("sha256").update(readKey).digest("hex")).executeTakeFirstOrThrow();
+    await app.get(DatabaseService).db.updateTable("api_keys").set({ revoked_at: new Date().toISOString() }).where("key_id", "=", readRecord.key_id).execute();
+    assert.equal((await fetch(`${baseUrl}/v1/dashboard/overview`, { headers: { cookie: sessionCookie } })).status, 401);
     const logout = await fetch(`${baseUrl}/v1/dashboard/session`, { method: "DELETE", headers: { "x-forwarded-proto": "https" } });
     assert.equal(logout.status, 200);
     assert.match(logout.headers.get("set-cookie") ?? "", /incidentiq_session=;.*Max-Age=0.*Secure/);
@@ -250,8 +253,14 @@ test("dashboard lists tenant-scoped incidents, filters them, and returns their e
     assert.equal(incident.brief.candidates[0]?.cause, "bad_release");
     assert.ok(incident.next_checks.some((check) => check.includes("/checkout") && check.includes("1.2.3")));
     let aiCalls = 0;
+    let releaseAi!: () => void;
+    let markAiStarted!: () => void;
+    const aiGate = new Promise<void>((resolve) => { releaseAi = resolve; });
+    const aiStarted = new Promise<void>((resolve) => { markAiStarted = resolve; });
     app.get(AiExplanationService).generate = async () => {
       aiCalls += 1;
+      markAiStarted();
+      await aiGate;
       return {
         summary: "The stored deployment and checkout failure support a release regression.",
         likely_cause: "The checkout failure is linked to version 1.2.3.",
@@ -269,7 +278,13 @@ test("dashboard lists tenant-scoped incidents, filters them, and returns their e
       .where("incident_id", "=", listed.items[0]!.incident_id)
       .execute();
     const explanationUrl = `${baseUrl}/v1/dashboard/incidents/${listed.items[0]?.incident_id}/ai-explanation`;
-    const explanationResponse = await fetch(explanationUrl, { method: "POST", headers: { cookie } });
+    const pendingExplanation = fetch(explanationUrl, { method: "POST", headers: { cookie } });
+    await aiStarted;
+    const duplicateResponse = await fetch(explanationUrl, { method: "POST", headers: { cookie } });
+    assert.equal(duplicateResponse.status, 409);
+    assert.match((await duplicateResponse.json() as { message: string }).message, /already being generated/i);
+    releaseAi();
+    const explanationResponse = await pendingExplanation;
     assert.equal(explanationResponse.status, 201);
     const explanation = await explanationResponse.json() as { model: string; evidence: Array<{ evidence_ids: string[] }> };
     assert.equal(explanation.model, "test-model");

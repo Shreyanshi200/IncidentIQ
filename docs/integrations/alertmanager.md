@@ -33,7 +33,7 @@ These optional labels make the evidence more useful:
 Run this from a checkout connected to the IncidentIQ database:
 
 ```sh
-pnpm incidentiq keys create --scope ingest
+pnpm incidentiq keys create --scope ingest --tenant local --label alertmanager
 ```
 
 Store the displayed key in your secret manager. Alertmanager should read it from a mounted secret file, never from committed YAML.

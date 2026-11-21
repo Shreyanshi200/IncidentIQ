@@ -12,7 +12,7 @@ const databaseUrl = process.env.DATABASE_URL;
 
 test("version reports the CLI and schema versions", async () => {
   const { stdout } = await run(process.execPath, [cli, "version"]);
-  assert.match(stdout, /incidentiq 0\.7\.1 \(schema 0\.0\.6\)/);
+  assert.match(stdout, /incidentiq 0\.8\.1 \(schema 0\.0\.6\)/);
 });
 
 test("correlate ranks the seeded cause", async () => {
@@ -27,12 +27,21 @@ test("fixture validate accepts a canonical fixture", async () => {
 });
 
 test("keys create can create a read key", { skip: !databaseUrl }, async () => {
-  const { stdout } = await run(process.execPath, [cli, "keys", "create", "--scope", "read"], { env: process.env });
-  assert.match(stdout, /Read API key \(shown once\): iiq_/);
-  const key = stdout.match(/iiq_[A-Za-z0-9_-]+/)?.[0];
+  const tenant = `cli-${Date.now()}`;
+  const { stdout } = await run(process.execPath, [cli, "keys", "create", "--scope", "read", "--tenant", tenant, "--label", "operator"], { env: process.env });
+  assert.match(stdout, /Created read key .* for tenant cli-/);
+  assert.match(stdout, /API key \(shown once\): iiq_/);
+  const key = stdout.match(/API key \(shown once\): (iiq_[A-Za-z0-9_-]+)/)?.[1];
+  const keyId = stdout.match(/Created read key ([0-9a-f-]+)/)?.[1];
   assert.ok(key);
+  assert.ok(keyId);
   const database = createDatabase(databaseUrl);
   try {
+    const { stdout: listed } = await run(process.execPath, [cli, "keys", "list", "--tenant", tenant], { env: process.env });
+    assert.match(listed, /"label": "operator"/);
+    assert.doesNotMatch(listed, new RegExp(key));
+    const { stdout: revoked } = await run(process.execPath, [cli, "keys", "revoke", keyId, "--tenant", tenant, "--confirm"], { env: process.env });
+    assert.match(revoked, /Revoked read key/);
     await database.deleteFrom("api_keys").where("key_hash", "=", createHash("sha256").update(key).digest("hex")).execute();
   } finally {
     await database.destroy();

@@ -1,4 +1,4 @@
-import { BadRequestException, Controller, Delete, Get, Headers, NotFoundException, Param, Post, Query, Res, StreamableFile } from "@nestjs/common";
+import { BadRequestException, Controller, Delete, Get, Headers, Ip, NotFoundException, Param, Post, Query, Res, StreamableFile } from "@nestjs/common";
 import { DashboardSessionService } from "./dashboard-session.service.js";
 import { type DashboardIncidentCursor, type DashboardIncidentDetail, type DashboardIncidentFilters, type DashboardIncidentPage, type DashboardOverview, DashboardService } from "./dashboard.service.js";
 import type { AiExplanation } from "./ai-explanation.service.js";
@@ -50,9 +50,10 @@ export class DashboardController {
   async createSession(
     @Headers("authorization") authorization: string | undefined,
     @Headers("x-forwarded-proto") forwardedProtocol: string | undefined,
+    @Ip() clientIp: string,
     @Res({ passthrough: true }) response: HeaderResponse
   ): Promise<{ expires_at: string }> {
-    const session = await this.sessions.create(authorization);
+    const session = await this.sessions.create(authorization, clientIp);
     response.setHeader("set-cookie", this.sessions.cookie(session.token, usesHttps(forwardedProtocol)));
     return { expires_at: session.expires_at };
   }

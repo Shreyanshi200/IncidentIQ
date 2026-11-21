@@ -72,8 +72,29 @@ interface ApiKeysTable {
   visible_prefix: string;
   scope: string;
   tenant_id: string;
+  label: string | null;
   created_at: Generated<string>;
+  expires_at: string | null;
   revoked_at: string | null;
+}
+
+export interface ApiKeySummary {
+  key_id: string;
+  visible_prefix: string;
+  scope: string;
+  tenant_id: string;
+  label: string | null;
+  created_at: string;
+  expires_at: string | null;
+  revoked_at: string | null;
+}
+
+export interface RetentionResult {
+  tenant_id: string;
+  cutoff: string;
+  incidents: number;
+  events: number;
+  deleted: boolean;
 }
 
 interface SchemaMigrationsTable {
@@ -205,13 +226,100 @@ export async function getIncident(db: Kysely<Database>, incidentId: string): Pro
   return db.selectFrom("incidents").select(["incident_id", "tenant_id", "service", "environment", "state", "started_at", "last_event_at", "event_count", "leading_cause", "confidence", "investigation"]).where("incident_id", "=", incidentId).executeTakeFirst();
 }
 
-export async function createApiKey(db: Kysely<Database>, scope: "ingest" | "read"): Promise<string> {
+export async function createApiKey(
+  db: Kysely<Database>,
+  scope: "ingest" | "read",
+  options: { tenantId?: string; label?: string; expiresAt?: string } = {}
+): Promise<{ key: string; keyId: string; visiblePrefix: string }> {
   const key = `iiq_${randomBytes(24).toString("base64url")}`;
+  const keyId = randomUUID();
   const keyHash = createHash("sha256").update(key).digest("hex");
-  await db.insertInto("api_keys").values({ key_id: randomUUID(), key_hash: keyHash, visible_prefix: key.slice(0, 12), scope, tenant_id: "local", revoked_at: null }).execute();
-  return key;
+  const visiblePrefix = key.slice(0, 12);
+  await db.insertInto("api_keys").values({
+    key_id: keyId,
+    key_hash: keyHash,
+    visible_prefix: visiblePrefix,
+    scope,
+    tenant_id: options.tenantId ?? "local",
+    label: options.label ?? null,
+    expires_at: options.expiresAt ?? null,
+    revoked_at: null
+  }).execute();
+  return { key, keyId, visiblePrefix };
 }
 
 export function createIngestionKey(db: Kysely<Database>): Promise<string> {
-  return createApiKey(db, "ingest");
+  return createApiKey(db, "ingest").then(({ key }) => key);
+}
+
+export async function listApiKeys(db: Kysely<Database>, tenantId?: string): Promise<ApiKeySummary[]> {
+  let query = db.selectFrom("api_keys").select(["key_id", "visible_prefix", "scope", "tenant_id", "label", "created_at", "expires_at", "revoked_at"]);
+  if (tenantId) query = query.where("tenant_id", "=", tenantId);
+  const rows = await query.orderBy("created_at", "desc").orderBy("key_id").execute();
+  return rows.map((row) => ({
+    ...row,
+    created_at: new Date(row.created_at).toISOString(),
+    expires_at: row.expires_at === null ? null : new Date(row.expires_at).toISOString(),
+    revoked_at: row.revoked_at === null ? null : new Date(row.revoked_at).toISOString()
+  }));
+}
+
+export async function revokeApiKey(db: Kysely<Database>, keyId: string, tenantId?: string): Promise<ApiKeySummary | undefined> {
+  let query = db
+    .updateTable("api_keys")
+    .set({ revoked_at: sql`now()` })
+    .where("key_id", "=", keyId)
+    .where("revoked_at", "is", null);
+  if (tenantId) query = query.where("tenant_id", "=", tenantId);
+  const row = await query
+    .returning(["key_id", "visible_prefix", "scope", "tenant_id", "label", "created_at", "expires_at", "revoked_at"])
+    .executeTakeFirst();
+  return row ? {
+    ...row,
+    created_at: new Date(row.created_at).toISOString(),
+    expires_at: row.expires_at === null ? null : new Date(row.expires_at).toISOString(),
+    revoked_at: row.revoked_at === null ? null : new Date(row.revoked_at).toISOString()
+  } : undefined;
+}
+
+export async function pruneTenantData(db: Kysely<Database>, tenantId: string, cutoff: string, confirm = false): Promise<RetentionResult> {
+  return db.transaction().execute(async (transaction) => {
+    const expiredIncidents = await transaction
+      .selectFrom("incidents")
+      .select(({ fn }) => fn.countAll<string>().as("count"))
+      .where("tenant_id", "=", tenantId)
+      .where("last_event_at", "<", cutoff)
+      .executeTakeFirstOrThrow();
+    const retainedEventIds = transaction
+      .selectFrom("incident_events")
+      .innerJoin("incidents", "incidents.incident_id", "incident_events.incident_id")
+      .select("incident_events.event_id")
+      .where("incidents.tenant_id", "=", tenantId)
+      .where("incidents.last_event_at", ">=", cutoff);
+    const expiredEvents = await transaction
+      .selectFrom("source_events")
+      .select(({ fn }) => fn.countAll<string>().as("count"))
+      .where("tenant_id", "=", tenantId)
+      .where("occurred_at", "<", cutoff)
+      .where("event_id", "not in", retainedEventIds)
+      .executeTakeFirstOrThrow();
+
+    const result: RetentionResult = {
+      tenant_id: tenantId,
+      cutoff,
+      incidents: Number(expiredIncidents.count),
+      events: Number(expiredEvents.count),
+      deleted: confirm
+    };
+    if (!confirm) return result;
+
+    const deletedIncidents = await transaction.deleteFrom("incidents").where("tenant_id", "=", tenantId).where("last_event_at", "<", cutoff).executeTakeFirst();
+    const deletedEvents = await transaction
+      .deleteFrom("source_events")
+      .where("tenant_id", "=", tenantId)
+      .where("occurred_at", "<", cutoff)
+      .where("event_id", "not in", transaction.selectFrom("incident_events").select("event_id"))
+      .executeTakeFirst();
+    return { ...result, incidents: Number(deletedIncidents.numDeletedRows), events: Number(deletedEvents.numDeletedRows) };
+  });
 }

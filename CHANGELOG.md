@@ -2,7 +2,15 @@
 
 Notable IncidentIQ changes are recorded here. Planned work belongs in the [release roadmap](docs/roadmap.md), not in the completed release history.
 
-## Unreleased
+## 0.8.1 - Operational hardening
+
+- Added labelled, tenant-selectable API keys with optional expiry, metadata listing, and confirmed revocation.
+- Added transactional, dry-run-first evidence retention that preserves keys and evidence linked to retained incidents.
+- Added bounded AI timeout, input size, output, reasoning, timeline, hourly usage, and duplicate-generation controls.
+- Added explicit request-body limits, dashboard session throttling, request IDs, defensive response headers, production JSON request logs, and graceful shutdown.
+- Split liveness and PostgreSQL-backed readiness probes while retaining the existing health endpoint as a compatibility alias.
+- Made normal CLI commands run without rebuilding the monorepo, with an explicit development command for rebuild-on-demand execution.
+- Added an operations guide covering safe rotation, retention scheduling, probes, and configuration boundaries.
 
 ## 0.8.0 - Evidence-bounded AI explanations
 

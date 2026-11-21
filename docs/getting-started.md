@@ -14,11 +14,31 @@ If `pnpm` is not installed, run `npm install --global pnpm@11.6.0`.
 
 ```sh
 git clone https://github.com/Shreyanshi200/IncidentIQ.git
+```
+
+```sh
 cd IncidentIQ
+```
+
+```sh
 pnpm install --frozen-lockfile
+```
+
+Build the workspace once. Normal `pnpm incidentiq ...` commands then run immediately without rebuilding every package:
+
+```sh
+pnpm build
+```
+
+```sh
 cp .env.example .env
+```
+
+```sh
 docker compose up -d postgres
 ```
+
+After changing source code, use `pnpm incidentiq:dev ...` when you want to rebuild the CLI and its workspace dependencies before running a command.
 
 The default `.env` configures a local database:
 
@@ -34,12 +54,15 @@ For a deployed API, replace the database URL with the PostgreSQL connection stri
 
 ```sh
 pnpm incidentiq init
-pnpm incidentiq keys create --scope ingest
+```
+
+```sh
+pnpm incidentiq keys create --scope ingest --tenant local --label local-ingestion
 ```
 
 The first command applies the PostgreSQL migrations. The second prints an `iiq_...` ingestion key once; IncidentIQ stores its hash, not the raw key.
 
-Save the raw key in your application or CI secret manager before closing the terminal. In the current release, the CLI creates keys for the `local` tenant, so integrations should use `tenant-id: local`.
+Save the raw key in your application or CI secret manager before closing the terminal. The command explicitly creates it for the `local` tenant, so integrations should use `tenant-id: local`. Follow the [operations guide](operations.md) to list, rotate, expire, and revoke keys safely.
 
 ## 3. Run the API
 
