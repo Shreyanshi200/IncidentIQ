@@ -31,7 +31,7 @@ pnpm api
 In a second terminal, create a read-only key. Copy the `iiq_...` value when it is printed; it cannot be shown again.
 
 ```sh
-pnpm incidentiq keys create --scope read
+pnpm incidentiq keys create --scope read --tenant local --label local-dashboard
 ```
 
 In a third terminal, start the dashboard development server:
@@ -74,7 +74,7 @@ An incident opens only after IncidentIQ accepts an `error` or `critical` event. 
 
 When the API server has optional AI explanations configured, select **Generate AI explanation** for a cited second opinion. The generated panel is visually labeled, cites only event IDs from the current timeline, and does not replace deterministic ranking or recommended checks. It is cached for the current evidence and included in a PDF generated afterward. See [Evidence-bounded AI explanations](ai-explanations.md) before enabling it, because the selected incident evidence is processed by OpenAI.
 
-The dashboard first displays the 25 most recently active incidents that match the filters. Select **Load 25 more** to continue through the list. Each follow-up page uses a cursor based on the last incident already shown, so newly arriving incidents do not cause duplicates or move a previously loaded result. It does not yet support acknowledgement, resolution, assignment, free-text search, or cross-service incident grouping.
+The dashboard first displays the 25 most recently active incidents that match the filters. Select **Load 25 more** to continue through the list. Each follow-up page uses a cursor based on the last incident already shown, so newly arriving incidents do not cause duplicates or move a previously loaded result. It does not yet support acknowledgement, resolution, assignment, or free-text search. Cross-service incident views are planned for v0.8.2.
 
 Each tab has a stable address ending in `/analysis`, `/evidence`, or `/ai-review`. Refreshing the browser or using **Refresh** reloads the same incident and selected tab, as long as the read-key browser session is still valid. Older incident links without a tab continue to open Analysis.
 

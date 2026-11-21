@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import type { IncidentFixture } from "@incidentiqhq/event-schema";
-import { applyMigrations, clearTenantData, createDatabase, getIncident, listEvents, listIncidents, loadFixture, saveInvestigation } from "../src/database.js";
+import { applyMigrations, clearTenantData, createApiKey, createDatabase, getIncident, listApiKeys, listEvents, listIncidents, loadFixture, pruneTenantData, revokeApiKey, saveInvestigation } from "../src/database.js";
 import { correlate } from "@incidentiqhq/correlation";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -54,6 +54,85 @@ test("tenant cleanup removes evidence and incidents only from the selected tenan
     assert.equal((await listEvents(database)).some((event) => event.tenant_id === tenantId), false);
     assert.equal((await listIncidents(database)).some((incident) => incident.tenant_id === tenantId), false);
   } finally {
+    await database.destroy();
+  }
+});
+
+test("API keys can be identified and revoked without exposing their secret", { skip: !databaseUrl }, async () => {
+  const tenantId = `keys-${randomUUID()}`;
+  const database = createDatabase(databaseUrl);
+  try {
+    await applyMigrations(database);
+    const created = await createApiKey(database, "read", { tenantId, label: "dashboard", expiresAt: "2030-01-01T00:00:00.000Z" });
+    const listed = await listApiKeys(database, tenantId);
+    assert.deepEqual(listed.map(({ key_id, visible_prefix, scope, tenant_id, label, expires_at, revoked_at }) => ({ key_id, visible_prefix, scope, tenant_id, label, expires_at, revoked_at })), [{
+      key_id: created.keyId,
+      visible_prefix: created.visiblePrefix,
+      scope: "read",
+      tenant_id: tenantId,
+      label: "dashboard",
+      expires_at: "2030-01-01T00:00:00.000Z",
+      revoked_at: null
+    }]);
+    assert.equal(JSON.stringify(listed).includes(created.key), false);
+    assert.equal((await revokeApiKey(database, created.keyId, tenantId))?.key_id, created.keyId);
+    assert.ok((await listApiKeys(database, tenantId))[0]?.revoked_at);
+    assert.equal(await revokeApiKey(database, created.keyId, tenantId), undefined);
+  } finally {
+    await database.deleteFrom("api_keys").where("tenant_id", "=", tenantId).execute();
+    await database.destroy();
+  }
+});
+
+test("retention dry-runs before deleting expired incidents and unretained events", { skip: !databaseUrl }, async () => {
+  const fixture = JSON.parse(await readFile("demo/fixtures/deployment-regression.json", "utf8")) as IncidentFixture;
+  const tenantId = `retention-${randomUUID()}`;
+  const expired = {
+    ...fixture,
+    fixture_id: `expired-${tenantId}`,
+    events: fixture.events.map((event) => ({ ...event, event_id: `expired-${event.event_id}-${tenantId}`, tenant_id: tenantId }))
+  };
+  const retained = {
+    ...fixture,
+    fixture_id: `retained-${tenantId}`,
+    events: fixture.events.map((event, index) => ({
+      ...event,
+      event_id: `retained-${event.event_id}-${tenantId}`,
+      tenant_id: tenantId,
+      occurred_at: index === 0 ? "2026-10-01T00:00:00.000Z" : `2026-11-02T00:0${index}:00.000Z`,
+      received_at: index === 0 ? "2026-10-01T00:00:01.000Z" : `2026-11-02T00:0${index}:01.000Z`
+    }))
+  };
+  const database = createDatabase(databaseUrl);
+  try {
+    await applyMigrations(database);
+    await loadFixture(database, expired);
+    await saveInvestigation(database, correlate(expired));
+    await loadFixture(database, retained);
+    await saveInvestigation(database, correlate(retained));
+
+    const cutoff = "2026-11-01T00:00:00.000Z";
+    assert.deepEqual(await pruneTenantData(database, tenantId, cutoff), {
+      tenant_id: tenantId,
+      cutoff,
+      incidents: 1,
+      events: expired.events.length,
+      deleted: false
+    });
+    assert.equal((await listIncidents(database, tenantId)).length, 2);
+    assert.equal((await listEvents(database)).filter((event) => event.tenant_id === tenantId).length, expired.events.length + retained.events.length);
+
+    assert.deepEqual(await pruneTenantData(database, tenantId, cutoff, true), {
+      tenant_id: tenantId,
+      cutoff,
+      incidents: 1,
+      events: expired.events.length,
+      deleted: true
+    });
+    assert.deepEqual((await listIncidents(database, tenantId)).map((incident) => incident.incident_id), [retained.fixture_id]);
+    assert.deepEqual((await listEvents(database)).filter((event) => event.tenant_id === tenantId).map((event) => event.event_id).sort(), retained.events.map((event) => event.event_id).sort());
+  } finally {
+    await clearTenantData(database, tenantId);
     await database.destroy();
   }
 });

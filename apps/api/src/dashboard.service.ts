@@ -133,6 +133,8 @@ function duration(milliseconds: number): string {
 
 @Injectable()
 export class DashboardService {
+  private readonly explanationsInFlight = new Set<string>();
+
   constructor(
     private readonly database: DatabaseService,
     private readonly sessions: DashboardSessionService,
@@ -321,18 +323,25 @@ export class DashboardService {
     if (!incident) return undefined;
     if (incident.ai_explanation) return incident.ai_explanation;
 
-    const explanation = await this.ai.generate(incident);
-    const investigation = record(row.investigation) ?? {};
-    const updated = await this.database.db
-      .updateTable("incidents")
-      .set({ investigation: { ...investigation, ai_explanation: explanation }, updated_at: explanation.generated_at })
-      .where("incident_id", "=", incidentId)
-      .where("tenant_id", "=", tenantId)
-      .where(sql<boolean>`xmin::text = ${row.row_version}`)
-      .returning("incident_id")
-      .executeTakeFirst();
-    if (!updated) throw new ConflictException("The incident changed while the explanation was generated; try again");
-    return explanation;
+    const requestId = `${tenantId}:${incidentId}`;
+    if (this.explanationsInFlight.has(requestId)) throw new ConflictException("An AI explanation is already being generated for this incident");
+    this.explanationsInFlight.add(requestId);
+    try {
+      const explanation = await this.ai.generate(incident, tenantId);
+      const investigation = record(row.investigation) ?? {};
+      const updated = await this.database.db
+        .updateTable("incidents")
+        .set({ investigation: { ...investigation, ai_explanation: explanation }, updated_at: explanation.generated_at })
+        .where("incident_id", "=", incidentId)
+        .where("tenant_id", "=", tenantId)
+        .where(sql<boolean>`xmin::text = ${row.row_version}`)
+        .returning("incident_id")
+        .executeTakeFirst();
+      if (!updated) throw new ConflictException("The incident changed while the explanation was generated; try again");
+      return explanation;
+    } finally {
+      this.explanationsInFlight.delete(requestId);
+    }
   }
 
   async incidentReport(cookie: string | undefined, incidentId: string): Promise<DashboardIncidentReport | undefined> {

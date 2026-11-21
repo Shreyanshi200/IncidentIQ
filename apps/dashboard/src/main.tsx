@@ -468,7 +468,6 @@ function App() {
         const apiMessage = typeof body?.message === "string" ? body.message : undefined;
         throw new Error(
           response.status === 401 ? "Your dashboard session expired." :
-          response.status === 409 ? "New evidence arrived while the AI explanation was generated. Refresh and try again." :
           response.status === 503 ? "AI explanations are not configured on the API server." :
           apiMessage ?? "The AI provider could not generate a valid evidence-bounded explanation."
         );
@@ -521,7 +520,7 @@ function App() {
         <button className={view === "overview" ? "active" : ""} onClick={() => navigate("overview")}>Overview</button>
         <button className={view === "investigations" || view === "detail" ? "active" : ""} onClick={() => navigate("investigations")}>Investigations</button>
       </nav>
-      <div className="sidebar-footer"><span>API target</span><code>{apiBaseUrl || "localhost:3000"}</code><small>v0.7.1</small></div>
+      <div className="sidebar-footer"><span>API target</span><code>{apiBaseUrl || "localhost:3000"}</code><small>v0.8.1</small></div>
     </aside>
 
     <main className="content">

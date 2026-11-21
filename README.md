@@ -66,6 +66,14 @@ cd IncidentIQ
 pnpm install --frozen-lockfile
 ```
 
+Build the workspace once after installation:
+
+```sh
+pnpm build
+```
+
+After this, `pnpm incidentiq ...` commands start the compiled CLI directly. Run `pnpm incidentiq:dev ...` instead when you want to rebuild the CLI and its dependencies after changing source code.
+
 ### Configuration
 
 ```sh
@@ -89,7 +97,7 @@ pnpm incidentiq init
 Create an ingestion key for SDKs and integrations:
 
 ```sh
-pnpm incidentiq keys create --scope ingest
+pnpm incidentiq keys create --scope ingest --tenant local --label local-ingestion
 ```
 
 Save the printed `iiq_...` value immediately. IncidentIQ stores only its hash and cannot show the raw key again.
@@ -97,7 +105,7 @@ Save the printed `iiq_...` value immediately. IncidentIQ stores only its hash an
 Create a separate read key for the dashboard:
 
 ```sh
-pnpm incidentiq keys create --scope read
+pnpm incidentiq keys create --scope read --tenant local --label local-dashboard
 ```
 
 ### Run and verify
@@ -236,8 +244,10 @@ The gallery uses the included checkout regression fixture: a release followed by
 | [Architecture](docs/architecture.md) | Components, end-to-end data flow, security boundaries, and infrastructure ownership |
 | [Dashboard](docs/dashboard.md) | Local or hosted dashboard setup and investigation workflow |
 | [AI explanations](docs/ai-explanations.md) | Optional OpenAI setup, evidence boundary, data handling, and production guidance |
+| [AI deep-dive test](docs/ai-deep-dive.md) | Rigorous 40-event, multi-service investigation and AI validation workflow |
 | [Automatic incidents](docs/automatic-incidents.md) | Incident opening, grouping, realistic fixtures, and current boundaries |
 | [Production deployment](docs/deployment/api-production.md) | HTTPS, PostgreSQL, static dashboard hosting, backups, upgrades, and rollback |
+| [Operations and guardrails](docs/operations.md) | API-key rotation, evidence retention, health probes, request limits, and AI budgets |
 | [Event data](docs/event-data.md) | Which event fields are generated, configured, or supplied by integrations |
 | [Changelog](CHANGELOG.md) | Completed releases and notable changes |
 | [Roadmap](docs/roadmap.md) | Planned releases and future extensibility |

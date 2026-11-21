@@ -115,5 +115,5 @@ This fixture path writes known demo evidence directly to PostgreSQL. Use the ear
 ## Current boundaries
 
 - Automatic detection runs only for events received by the API. `pnpm incidentiq fixture load ...` intentionally writes demo events directly to PostgreSQL and does not create automatic incidents.
-- Grouping is local to a tenant, service, and environment. Cross-service incident merging and dependency graphs remain future work.
-- Incidents stay `open`; the v0.7.1 dashboard can now list them and show an evidence-backed brief, candidate ranking, validation plan, and linked timeline. Acknowledgement, resolution, and notification workflow remain future work.
+- Grouping is currently local to a tenant, service, and environment. Dependency-aware cross-service correlation is planned for v0.8.2.
+- Incidents stay `open`; the dashboard lists them with an evidence-backed brief, candidate ranking, validation plan, and linked timeline. Acknowledgement, resolution, and notification workflow remain future work.

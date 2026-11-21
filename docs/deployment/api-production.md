@@ -54,6 +54,8 @@ Edit `~/incidentiq-production/.env`. Replace all placeholders:
 - `INCIDENTIQ_INCIDENT_GAP_MINUTES` — positive minutes of inactivity after which a matching error starts a new incident, normally `10`;
 - `INCIDENTIQ_CONTEXT_LOOKBACK_MINUTES` — positive minutes of preceding evidence included and evaluated for cause correlation, normally `10`;
 - optional `OPENAI_API_KEY` and `INCIDENTIQ_AI_MODEL` — set both only when your data policy permits OpenAI to process selected incident evidence; and
+- the request, session, and AI guardrail values — keep the checked-in defaults unless your measured workload requires a bounded change;
+- `NODE_ENV` — keep this as `production` so the API requires a stable session secret and emits structured request logs; and
 - `PORT` — normally leave this as `3000`.
 
 Keep `.env` readable only by the deployment operator. It contains the database password.
@@ -124,7 +126,7 @@ The command records each applied SQL migration in `schema_migrations`; running i
 Create an ingestion key for each independent producer or secret boundary. The following command creates one key; repeat it when GitHub Actions, Kubernetes, Alertmanager, or an application should not share credentials:
 
 ```sh
-docker compose run --rm --no-deps --entrypoint node api apps/cli/dist/src/index.js keys create --scope ingest
+docker compose run --rm --no-deps --entrypoint node api apps/cli/dist/src/index.js keys create --scope ingest --tenant local --label production-ingestion
 ```
 
 The raw `iiq_...` key is printed once. Save it immediately in your secret manager, then add it as a secret in GitHub Actions, Kubernetes, or Alertmanager. IncidentIQ stores only its hash.
@@ -132,10 +134,10 @@ The raw `iiq_...` key is printed once. Save it immediately in your secret manage
 Create a separate read key for the dashboard operator:
 
 ```sh
-docker compose run --rm --no-deps --entrypoint node api apps/cli/dist/src/index.js keys create --scope read
+docker compose run --rm --no-deps --entrypoint node api apps/cli/dist/src/index.js keys create --scope read --tenant local --label production-dashboard
 ```
 
-Save this second `iiq_...` value in the operator's password manager. Do not give it to an integration. Both keys belong to the current `local` tenant, so the dashboard only returns that tenant's data.
+Save this second `iiq_...` value in the operator's password manager. Do not give it to an integration. Both keys belong to the explicit `local` tenant, so the dashboard only returns that tenant's data. Use the [operations guide](../operations.md) to list metadata and rotate, expire, or revoke a key without exposing its raw value.
 
 Do not put any key in application source code, a committed `.env` file, or a shell history command.
 
@@ -150,7 +152,7 @@ docker compose ps
 ```
 
 ```sh
-curl --fail --silent --show-error http://127.0.0.1:3000/v1/health
+curl --fail --silent --show-error http://127.0.0.1:3000/v1/health/ready
 ```
 
 Expected output:
@@ -254,6 +256,8 @@ server {
 
 The certificate paths above are the usual Let's Encrypt paths. Replace them when your provider or certificate manager stores the files elsewhere.
 
+IncidentIQ trusts this single reverse-proxy hop when applying per-client dashboard session limits. Keep the API bound to loopback as shown above. Do not expose port `3000` directly or insert another proxy layer without updating the deployment topology.
+
 Validate the configuration before reloading Nginx:
 
 ```sh
@@ -267,7 +271,7 @@ sudo systemctl reload nginx
 Verify both routes through the public hostname:
 
 ```sh
-curl --fail --silent --show-error https://incidentiq.example.com/v1/health
+curl --fail --silent --show-error https://incidentiq.example.com/v1/health/ready
 ```
 
 ```sh
@@ -303,7 +307,7 @@ docker compose run --rm --no-deps --entrypoint node api apps/cli/dist/src/index.
 
 Before accepting production events, verify all of the following:
 
-- [ ] The API health endpoint succeeds through the public HTTPS hostname.
+- [ ] The API liveness and readiness endpoints succeed through the public HTTPS hostname.
 - [ ] The dashboard loads through the same hostname, accepts the read key, survives a page refresh, and signs out cleanly.
 - [ ] The database is private, encrypted in transit, and backed up.
 - [ ] The `.env` file, stable session secret, ingestion keys, and read key are held only in approved secret storage.
@@ -340,7 +344,7 @@ pg_dump --format=custom --file=incidentiq-$(date +%F).dump "$DATABASE_URL"
 
 Store backups away from the API host. Database backups contain recorded evidence and API-key hashes, so protect them as sensitive operational data.
 
-For recovery, restore a known-good PostgreSQL backup, start the API with its matching or newer compatible image, then verify `/v1/health`. Do not assume a database migration can be rolled back automatically.
+For recovery, restore a known-good PostgreSQL backup, start the API with its matching or newer compatible image, then verify `/v1/health/ready`. Do not assume a database migration can be rolled back automatically.
 
 ## Upgrade procedure
 
@@ -369,7 +373,7 @@ docker compose up -d api
 6. Verify both the API and dashboard:
 
 ```sh
-curl --fail --silent --show-error https://incidentiq.example.com/v1/health
+curl --fail --silent --show-error https://incidentiq.example.com/v1/health/ready
 ```
 
 ```sh
@@ -380,4 +384,4 @@ If the new API fails before migrations have made incompatible changes, restore t
 
 ## Current production limits
 
-The current release deliberately keeps operations simple. It has one API process and PostgreSQL, but not yet API-key rotation tooling, rate limiting, a durable ingestion queue, active-active replicas, or bundled dashboard hosting. The dashboard is a separate static build; see the [dashboard guide](../dashboard.md) for its local run and static-build instructions. Plan capacity and incident response around those boundaries until the relevant roadmap versions land.
+The current release deliberately supports one API process and PostgreSQL. Key lifecycle, dry-run retention, request limits, and bounded AI usage are available, but their rate counters are process-local. It does not yet include a durable ingestion queue, active-active replicas, distributed quotas, or bundled dashboard hosting. The dashboard remains a separate static build; see the [dashboard guide](../dashboard.md) and [operations guide](../operations.md).

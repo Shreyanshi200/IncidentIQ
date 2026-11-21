@@ -1,5 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { Injectable, UnauthorizedException } from "@nestjs/common";
+import { HttpException, HttpStatus, Injectable, UnauthorizedException } from "@nestjs/common";
 import { ApiKeysService } from "./api-keys.service.js";
 
 export const DASHBOARD_SESSION_COOKIE = "incidentiq_session";
@@ -23,14 +23,23 @@ function cookieValue(cookie: string | undefined, name: string): string | undefin
 @Injectable()
 export class DashboardSessionService {
   private readonly secret: Buffer;
+  private readonly attempts = new Map<string, number[]>();
+  private readonly attemptsPerMinute: number;
 
   constructor(private readonly apiKeys: ApiKeysService) {
     const configured = process.env.INCIDENTIQ_SESSION_SECRET;
+    if (process.env.NODE_ENV === "production" && !configured) throw new Error("INCIDENTIQ_SESSION_SECRET is required when NODE_ENV=production");
     if (configured && Buffer.byteLength(configured) < 32) throw new Error("INCIDENTIQ_SESSION_SECRET must contain at least 32 bytes");
     this.secret = configured ? Buffer.from(configured) : randomBytes(32);
+    const configuredAttempts = Number(process.env.INCIDENTIQ_SESSION_ATTEMPTS_PER_MINUTE ?? 20);
+    if (!Number.isInteger(configuredAttempts) || configuredAttempts < 1 || configuredAttempts > 1_000) {
+      throw new Error("INCIDENTIQ_SESSION_ATTEMPTS_PER_MINUTE must be an integer between 1 and 1000");
+    }
+    this.attemptsPerMinute = configuredAttempts;
   }
 
-  async create(authorization: string | undefined): Promise<{ token: string; expires_at: string }> {
+  async create(authorization: string | undefined, clientId = "unknown"): Promise<{ token: string; expires_at: string }> {
+    this.consumeAttempt(clientId);
     const key = bearerToken(authorization);
     const apiKey = key ? await this.apiKeys.findActive(key) : undefined;
     if (!apiKey || apiKey.scope !== "read") throw new UnauthorizedException("A valid read API key is required");
@@ -65,6 +74,23 @@ export class DashboardSessionService {
 
   clearCookie(secure: boolean): string {
     return `${DASHBOARD_SESSION_COOKIE}=; HttpOnly; SameSite=Strict; Path=/v1/dashboard; Max-Age=0${secure ? "; Secure" : ""}`;
+  }
+
+  private consumeAttempt(clientId: string): void {
+    const now = Date.now();
+    if (!this.attempts.has(clientId) && this.attempts.size >= 10_000) {
+      for (const [id, timestamps] of this.attempts) {
+        if (!timestamps.some((timestamp) => timestamp > now - 60_000)) this.attempts.delete(id);
+      }
+      if (this.attempts.size >= 10_000) throw new HttpException("Dashboard session capacity is temporarily exhausted", HttpStatus.TOO_MANY_REQUESTS);
+    }
+    const recent = (this.attempts.get(clientId) ?? []).filter((timestamp) => timestamp > now - 60_000);
+    if (recent.length >= this.attemptsPerMinute) {
+      this.attempts.set(clientId, recent);
+      throw new HttpException("Too many dashboard session attempts; retry after one minute", HttpStatus.TOO_MANY_REQUESTS);
+    }
+    recent.push(now);
+    this.attempts.set(clientId, recent);
   }
 
   private sign(body: string): string {

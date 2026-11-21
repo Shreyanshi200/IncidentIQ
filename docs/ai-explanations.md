@@ -19,7 +19,7 @@ pnpm api
 
 Open an incident in the dashboard and select **Generate AI explanation**. IncidentIQ calls the model only after this explicit action. A successful result is cached with that incident, appears after refresh, and is included in later PDF reports. When new evidence changes the incident, the cached explanation is removed so it cannot silently describe an older timeline.
 
-IncidentIQ requests low reasoning effort with an 8,000-token output ceiling. This leaves room for reasoning plus the validated structured response while keeping the operator-triggered request bounded. Provider failures are shown without exposing the API key: invalid credentials, unavailable model access, quota or spend limits, rate limits, timeouts, refusals, and exhausted output budgets produce distinct messages.
+By default, IncidentIQ requests low reasoning effort, allows at most 8,000 output tokens, and rejects incident input larger than 512 KiB. Timeout, input size, output budget, hourly requests, timeline size, and reasoning effort are bounded operator settings documented in the [operations guide](operations.md). Provider failures are shown without exposing the API key: invalid credentials, unavailable model access, quota or spend limits, rate limits, timeouts, refusals, and exhausted output budgets produce distinct messages.
 
 ## Thorough local test
 
@@ -102,7 +102,7 @@ pnpm dashboard
 Open `http://localhost:5173`. Use your existing read key or browser session. If neither is available, create a new read key:
 
 ```sh
-pnpm incidentiq keys create --scope read
+pnpm incidentiq keys create --scope read --tenant local --label local-ai-review
 ```
 
 ### 4. Generate and review each explanation
@@ -128,49 +128,7 @@ Finally, download each incident report. The PDF should include the cited AI revi
 
 The ambiguous scenario is the most important safety test. A longer answer is not necessarily better: the correct behavior is to preserve uncertainty and ask for discriminating evidence.
 
-## Deep-dive stress scenario
-
-Use this scenario when you want a substantially harder investigation than the four focused fixtures. It contains 40 ordered events across `checkout-api` and `payments-api`, four evidence sources, five shared traces, misleading checkout resource symptoms, and two separate rollbacks.
-
-The fixture is a curated multi-service investigation. IncidentIQ's automatic incident grouping currently groups activity by tenant, service, and environment; it does not yet discover and merge an arbitrary cross-service incident by itself. Loading and saving this fixture tests correlation, investigation presentation, reporting, and AI reasoning over a realistic unified evidence set without claiming that cross-service discovery is already automatic.
-
-For the cleanest comparison, first clear the local tenant. This is optional and permanently removes only that tenant's evidence and incidents; it preserves keys and migrations:
-
-```sh
-pnpm incidentiq data clear --tenant local --confirm
-```
-
-Load the complete evidence set:
-
-```sh
-pnpm incidentiq fixture load demo/fixtures/production-payment-pool-cascade.json
-```
-
-Run deterministic correlation and save the investigation:
-
-```sh
-pnpm incidentiq correlate demo/fixtures/production-payment-pool-cascade.json --save
-```
-
-Confirm that it was saved:
-
-```sh
-pnpm incidentiq incidents list --tenant local
-```
-
-Before opening **AI Review**, inspect the Analysis and Evidence tabs and write down your own leading hypothesis. The deterministic result should be **downstream timeout** with high confidence. Several alternatives remain visible because the checkout release, checkout CPU and memory pressure, pod failures, and a payments deployment are all plausible at first glance.
-
-A strong AI review should:
-
-- identify the `payments-api` database-pool configuration change as the leading, still-unproven hypothesis;
-- cite the payments release, pool saturation and runtime sample, shared payment-to-checkout traces, ineffective checkout rollback, and recovery after the payments rollback;
-- treat checkout CPU, memory, restart, and crash-loop signals as likely secondary symptoms rather than the initiating failure;
-- use the healthy external-provider observation as evidence against a provider outage; and
-- state that database-server metrics, query logs, connection-lifecycle evidence, and the actual configuration diff would still be needed to establish root cause.
-
-It must not claim that checkout version `3.5.0` caused the incident merely because it deployed first, invent a customer-impact figure, cite absent evidence, or describe the database-pool regression as proven. Compare its event-ID citations with the Evidence tab, then download the report and confirm the same bounded reasoning appears there.
-
-This scenario answers a harder question than “can the model summarize logs?”: can the platform keep competing evidence visible, follow propagation across services, use a failed rollback as counterevidence, and distinguish recovery correlation from causal proof?
+For a much harder 40-event, multi-service investigation, follow the [payment-pool cascade deep-dive](ai-deep-dive.md).
 
 ## What is sent
 
@@ -197,7 +155,7 @@ Every claim and check must cite event IDs present in the selected incident. The 
 
 ## Production configuration
 
-Keep `OPENAI_API_KEY` in the API server's secret manager, never in the dashboard build or a producer. Set `INCIDENTIQ_AI_MODEL` explicitly so model and cost changes are deliberate. Restart the API after rotating the key or changing the model.
+Keep `OPENAI_API_KEY` in the API server's secret manager, never in the dashboard build or a producer. Set `INCIDENTIQ_AI_MODEL` explicitly so model and cost changes are deliberate. Configure the bounded AI controls through the variables in the [operations guide](operations.md), then restart the API after changing any of them.
 
 If either value is absent, the dashboard shows **AI not configured** and all deterministic investigation features continue to work. Provider errors also leave the stored incident unchanged.
 
@@ -205,8 +163,9 @@ If either value is absent, the dashboard shows **AI not configured** and all det
 
 - OpenAI's Responses API is the only supported provider in this release.
 - Generation is manual and cached; there is no automatic per-incident spend.
+- Input size, output tokens, request duration, timeline size, and per-process hourly generations are bounded.
 - AI does not change candidate scores, incident grouping, or raw evidence.
 - AI does not run commands, deploy changes, or remediate production systems.
-- Retention controls, request budgets, and broader operational guardrails are planned for v0.8.1.
+- Usage counters are process-local and reset when the supported single API process restarts; they are operational limits, not billing controls.
 
 The integration uses OpenAI Structured Outputs through the Responses API. See the official [Structured Outputs guide](https://developers.openai.com/api/docs/guides/structured-outputs) and [Responses API reference](https://developers.openai.com/api/reference/resources/responses/methods/create) for the upstream contract.

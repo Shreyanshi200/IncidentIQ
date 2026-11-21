@@ -107,7 +107,7 @@ In terminal 1, from the repository root:
 export DATABASE_URL=postgresql://incidentiq:incidentiq@localhost:5432/incidentiq
 docker compose up -d postgres
 pnpm incidentiq init
-pnpm incidentiq keys create --scope ingest
+pnpm incidentiq keys create --scope ingest --tenant local --label kubernetes-collector
 pnpm api
 ```
 

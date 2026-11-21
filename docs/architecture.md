@@ -77,13 +77,14 @@ See the [event data guide](event-data.md) for field ownership and the source-spe
 
 ## Security and tenant boundaries
 
-- Ingestion and read keys are separate. IncidentIQ stores only their hashes.
+- Ingestion and read keys are separate. IncidentIQ stores only their hashes and operator-visible metadata; optional expiry and revocation are enforced on every authenticated request.
 - An ingestion key can write events only for its assigned tenant.
 - A read key starts an eight-hour signed browser session that can load only that tenant's dashboard data and reports.
 - The raw read key is not stored in browser storage; the session cookie is `HttpOnly` and `SameSite=Strict`, with `Secure` on HTTPS.
 - `INCIDENTIQ_SESSION_SECRET` signs browser sessions and is unrelated to either API key.
 - `OPENAI_API_KEY` is optional, remains server-side, and is sent only to OpenAI. Enabling it sends the selected incident's redacted operational evidence to that external processor.
 - PostgreSQL and the API container port should remain private behind an HTTPS reverse proxy.
+- Production responses include request IDs and defensive headers; JSON request logs exclude headers and bodies.
 
 ## Infrastructure ownership
 
@@ -101,8 +102,9 @@ IncidentIQ supplies the API and collector images, npm SDK, GitHub Action, databa
 ## Current boundaries
 
 - One API process and PostgreSQL are the supported production shape.
+- Session and AI rate limits are process-local and reset when that API process restarts.
 - The dashboard is single-operator and has no acknowledgement, assignment, or resolution workflow.
-- Automatic grouping is limited to one tenant, service, and environment; it does not yet merge dependency-wide incidents.
+- Automatic grouping is limited to one tenant, service, and environment; dependency-aware cross-service correlation is planned for v0.8.2.
 - Kubernetes collection is namespace-scoped and keeps watch checkpoints in memory.
 - Correlation remains evidence-bounded and deterministic. Optional AI output is a cited second opinion and never changes stored scores or grouping.
 

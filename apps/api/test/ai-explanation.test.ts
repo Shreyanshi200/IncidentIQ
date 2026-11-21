@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { AiExplanationService, validateAiExplanation } from "../src/ai-explanation.service.js";
+import { AiExplanationService, aiSettings, validateAiExplanation } from "../src/ai-explanation.service.js";
 import type { DashboardIncidentDetail } from "../src/dashboard.service.js";
 
 const incident: DashboardIncidentDetail = {
@@ -63,6 +63,19 @@ test("AI explanation validation rejects citations outside the incident timeline"
   assert.equal(validateAiExplanation({ ...modelOutput, evidence: [{ claim: "Unknown evidence.", evidence_ids: ["other-tenant-event"] }] }, new Set(["deploy-1", "error-1"]), "test-model"), undefined);
 });
 
+test("AI configuration requires the key and model together", () => {
+  const previousKey = process.env.OPENAI_API_KEY;
+  const previousModel = process.env.INCIDENTIQ_AI_MODEL;
+  process.env.OPENAI_API_KEY = "test-key";
+  delete process.env.INCIDENTIQ_AI_MODEL;
+  try {
+    assert.throws(() => new AiExplanationService(), /must be configured together/);
+  } finally {
+    if (previousKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = previousKey;
+    if (previousModel === undefined) delete process.env.INCIDENTIQ_AI_MODEL; else process.env.INCIDENTIQ_AI_MODEL = previousModel;
+  }
+});
+
 test("AI explanations use structured, non-stored responses and return only validated citations", async () => {
   const previousKey = process.env.OPENAI_API_KEY;
   const previousModel = process.env.INCIDENTIQ_AI_MODEL;
@@ -110,5 +123,52 @@ test("AI explanations report actionable provider and incomplete-response failure
     globalThis.fetch = previousFetch;
     if (previousKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = previousKey;
     if (previousModel === undefined) delete process.env.INCIDENTIQ_AI_MODEL; else process.env.INCIDENTIQ_AI_MODEL = previousModel;
+  }
+});
+
+test("AI explanation limits are configurable, bounded, and tenant scoped", async () => {
+  const names = ["OPENAI_API_KEY", "INCIDENTIQ_AI_MODEL", "INCIDENTIQ_AI_TIMEOUT_SECONDS", "INCIDENTIQ_AI_MAX_OUTPUT_TOKENS", "INCIDENTIQ_AI_MAX_INPUT_KB", "INCIDENTIQ_AI_REQUESTS_PER_HOUR", "INCIDENTIQ_AI_MAX_TIMELINE_EVENTS", "INCIDENTIQ_AI_REASONING_EFFORT"] as const;
+  const previous = Object.fromEntries(names.map((name) => [name, process.env[name]]));
+  const previousFetch = globalThis.fetch;
+  process.env.OPENAI_API_KEY = "test-key";
+  process.env.INCIDENTIQ_AI_MODEL = "test-model";
+  process.env.INCIDENTIQ_AI_TIMEOUT_SECONDS = "15";
+  process.env.INCIDENTIQ_AI_MAX_OUTPUT_TOKENS = "2000";
+  process.env.INCIDENTIQ_AI_MAX_INPUT_KB = "64";
+  process.env.INCIDENTIQ_AI_REQUESTS_PER_HOUR = "1";
+  process.env.INCIDENTIQ_AI_MAX_TIMELINE_EVENTS = "10";
+  process.env.INCIDENTIQ_AI_REASONING_EFFORT = "medium";
+  let requestBody: Record<string, unknown> | undefined;
+  globalThis.fetch = async (_input, init) => {
+    requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    return new Response(JSON.stringify({
+      status: "completed",
+      output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(modelOutput) }] }]
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  };
+
+  try {
+    const service = new AiExplanationService();
+    await service.generate(incident, "tenant-a");
+    assert.equal(requestBody?.max_output_tokens, 2_000);
+    assert.deepEqual(requestBody?.reasoning, { effort: "medium" });
+    await assert.rejects(() => service.generate(incident, "tenant-a"), /hourly window/i);
+    await service.generate(incident, "tenant-b");
+
+    const oversized = { ...incident, timeline: Array.from({ length: 11 }, (_, index) => ({ ...incident.timeline[0]!, event_id: `event-${index}` })) };
+    await assert.rejects(() => new AiExplanationService().generate(oversized, "tenant-c"), /configured AI limit is 10/i);
+    const oversizedInput = {
+      ...incident,
+      timeline: Array.from({ length: 10 }, (_, index) => ({ ...incident.timeline[0]!, event_id: `large-event-${index}`, attributes: { message: "x".repeat(8_000) } }))
+    };
+    await assert.rejects(() => new AiExplanationService().generate(oversizedInput, "tenant-d"), /configured limit is 64 KiB/i);
+    process.env.INCIDENTIQ_AI_TIMEOUT_SECONDS = "2";
+    assert.throws(() => aiSettings(), /between 5 and 120/);
+  } finally {
+    globalThis.fetch = previousFetch;
+    for (const name of names) {
+      const value = previous[name];
+      if (value === undefined) delete process.env[name]; else process.env[name] = value;
+    }
   }
 });

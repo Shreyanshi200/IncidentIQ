@@ -48,7 +48,9 @@ interface ApiKeysTable {
   visible_prefix: string;
   scope: string;
   tenant_id: string;
+  label: string | null;
   created_at: Generated<string>;
+  expires_at: string | null;
   revoked_at: string | null;
 }
 
@@ -63,11 +65,13 @@ export function databaseEnvPaths(cwd = process.cwd()): string[] {
   return [resolve(cwd, ".env"), resolve(cwd, "..", "..", ".env")];
 }
 
+export function loadEnvironment(cwd = process.cwd()): void {
+  const envFile = databaseEnvPaths(cwd).find((path) => existsSync(path));
+  if (envFile) process.loadEnvFile(envFile);
+}
+
 function databaseUrl(): string {
-  if (!process.env.DATABASE_URL) {
-    const envFile = databaseEnvPaths().find((path) => existsSync(path));
-    if (envFile) process.loadEnvFile(envFile);
-  }
+  loadEnvironment();
   if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required; see .env.example");
   return process.env.DATABASE_URL;
 }
