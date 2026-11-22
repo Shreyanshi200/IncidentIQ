@@ -96,24 +96,24 @@ Validate the fixture:
 pnpm incidentiq fixture validate demo/fixtures/production-checkout-regression.json
 ```
 
-Load its source evidence:
+Clear the fixed fixture IDs if you have run it before:
 
 ```sh
-pnpm incidentiq fixture load demo/fixtures/production-checkout-regression.json
+pnpm incidentiq data clear --tenant local --confirm
 ```
 
-Correlate and save the investigation:
+Send the fixture through the authenticated ingestion API so automatic detection creates the incident:
 
 ```sh
-pnpm incidentiq correlate demo/fixtures/production-checkout-regression.json --save
+pnpm incidentiq fixture ingest demo/fixtures/production-checkout-regression.json
 ```
 
-Open the dashboard, select **Investigations**, and inspect `production-checkout-regression`. You should see a high-confidence release hypothesis, the factors and alternative candidates behind it, contextual validation steps, and all 20 events in order. The raw attributes remain expandable so you can verify every plain-language summary.
+Open the dashboard, select **Investigations**, and inspect the `checkout-api` production incident. You should see a high-confidence release hypothesis, the factors and alternative candidates behind it, contextual validation steps, and all 20 events in order. The raw attributes remain expandable so you can verify every plain-language summary.
 
-This fixture path writes known demo evidence directly to PostgreSQL. Use the earlier API request when you specifically want to test authenticated ingestion and automatic incident creation.
+Unlike `fixture load`, `fixture ingest` exercises API-key authentication, schema validation, redaction, duplicate handling, automatic detection, and service-local incident storage.
 
 ## Current boundaries
 
-- Automatic detection runs only for events received by the API. `pnpm incidentiq fixture load ...` intentionally writes demo events directly to PostgreSQL and does not create automatic incidents.
-- Grouping is currently local to a tenant, service, and environment. Dependency-aware cross-service correlation is planned for v0.8.2.
+- Automatic detection runs only for events received by the API. Use `fixture ingest` for an end-to-end test; `fixture load` intentionally writes demo events directly to PostgreSQL and does not create automatic incidents.
+- Incidents remain stored per tenant, service, and environment. The dashboard now presents an evidence-backed cross-service investigation when nearby service-local incidents share traces or have an explicit dependency failure; it does not destructively merge stored incident records.
 - Incidents stay `open`; the dashboard lists them with an evidence-backed brief, candidate ranking, validation plan, and linked timeline. Acknowledgement, resolution, and notification workflow remain future work.

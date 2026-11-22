@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { glob, readFile } from "node:fs/promises";
 import type { IncidentFixture } from "@incidentiqhq/event-schema";
-import { correlate } from "@incidentiqhq/correlation";
+import { correlate, crossServiceLinks } from "@incidentiqhq/correlation";
 
 test("canonical fixtures rank their expected cause", async () => {
   for await (const file of glob("demo/fixtures/*.json", { cwd: process.cwd() })) {
@@ -57,6 +57,44 @@ test("a noisy multi-service cascade preserves the downstream cause", async () =>
   assert.deepEqual(downstream?.factors.map((factor) => factor.evidence_ids.length), [10, 10]);
   assert.ok(result.next_checks.some((check) => check.includes("postgres-primary")));
   assert.ok(result.next_checks.some((check) => check.includes("trace-cascade-a")));
+});
+
+test("cross-service links require shared traces or a declared dependency failure", async () => {
+  const fixture = JSON.parse(await readFile("demo/fixtures/downstream-cascade.json", "utf8")) as IncidentFixture;
+  const links = crossServiceLinks(fixture.events);
+  assert.ok(links.some((link) => link.reason === "shared_trace" && link.from_service === "payments-api" && link.to_service === "checkout-api"));
+  assert.ok(links.some((link) => link.reason === "declared_dependency" && link.from_service === "payments-api" && link.to_service === "checkout-api"));
+  assert.deepEqual(
+    links.find((link) => link.reason === "declared_dependency" && link.trace_id === "trace-pay-702")?.evidence_ids.sort(),
+    ["checkout-trace-702-failed", "payments-trace-702-timeout"]
+  );
+  assert.deepEqual(crossServiceLinks(fixture.events.map((event) => ({ ...event, trace_id: undefined, attributes: {} }))), []);
+});
+
+test("cross-service links stay inside one tenant, environment, and evidence window", async () => {
+  const fixture = JSON.parse(await readFile("demo/fixtures/downstream-cascade.json", "utf8")) as IncidentFixture;
+  const source = fixture.events.find((event) => event.event_id === "payments-trace-702-timeout")!;
+  const target = fixture.events.find((event) => event.event_id === "checkout-trace-702-failed")!;
+  const unrelated = [
+    { ...target, event_id: "other-tenant", tenant_id: "other" },
+    { ...target, event_id: "other-environment", environment: "staging" },
+    { ...target, event_id: "outside-window", occurred_at: new Date(Date.parse(source.occurred_at) + 11 * 60_000).toISOString() }
+  ];
+
+  assert.deepEqual(crossServiceLinks([source, ...unrelated]), []);
+});
+
+test("multi-hop traces preserve adjacent topology without inventing fan-out links", async () => {
+  const fixture = JSON.parse(await readFile("demo/fixtures/production-commerce-platform-cascade.json", "utf8")) as IncidentFixture;
+  const links = crossServiceLinks(fixture.events);
+  const shared = links.filter((link) => link.reason === "shared_trace" && link.trace_id === "trace-mega-a");
+
+  assert.deepEqual(
+    shared.map((link) => `${link.from_service}->${link.to_service}`),
+    ["checkout-api->edge-api", "orders-api->payments-api", "payments-api->checkout-api", "postgres-primary->orders-api"]
+  );
+  assert.ok(!links.some((link) => link.from_service === "postgres-primary" && link.to_service === "edge-api"));
+  assert.ok(!links.some((link) => link.from_service === "fraud-api" || link.to_service === "fraud-api"));
 });
 
 test("all Node SDK error types participate in correlation", async () => {

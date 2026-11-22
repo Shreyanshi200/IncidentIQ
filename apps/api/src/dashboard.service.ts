@@ -1,6 +1,8 @@
 import { ConflictException, Injectable } from "@nestjs/common";
+import { createHash } from "node:crypto";
 import { sql } from "kysely";
-import type { NormalizedEvent } from "@incidentiqhq/event-schema";
+import { type IncidentFixture, type NormalizedEvent } from "@incidentiqhq/event-schema";
+import { correlate, crossServiceLinks, type CrossServiceLink } from "@incidentiqhq/correlation";
 import { DatabaseService } from "./database.js";
 import { DashboardSessionService } from "./dashboard-session.service.js";
 import { createIncidentReportPdf } from "./incident-report.js";
@@ -75,6 +77,13 @@ export interface DashboardIncidentDetail extends DashboardIncident {
   next_checks: string[];
   ai_available: boolean;
   ai_explanation?: AiExplanation;
+  cross_service?: DashboardCrossServiceContext;
+}
+
+export interface DashboardCrossServiceContext {
+  related_incident_ids: string[];
+  services: Array<{ service: string; event_count: number; role: "primary" | "linked" }>;
+  links: CrossServiceLink[];
 }
 
 export interface DashboardIncidentReport {
@@ -129,6 +138,45 @@ function elapsed(start: string, end: string): string {
 function duration(milliseconds: number): string {
   const minutes = milliseconds / 60_000;
   return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+}
+
+function correlationWindow(investigation: unknown): number {
+  const value = record(investigation)?.correlation_window_ms;
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 10 * 60 * 1_000;
+}
+
+function eventFingerprint(events: DashboardTimelineEvent[]): string {
+  return createHash("sha256").update(events.map((event) => event.event_id).sort().join("\u0000")).digest("hex");
+}
+
+function orderedCrossServiceNames(events: DashboardTimelineEvent[], links: CrossServiceLink[]): string[] {
+  const services = new Set(events.map((event) => event.service));
+  const incoming = new Map([...services].map((service) => [service, 0]));
+  const outgoing = new Map([...services].map((service) => [service, new Set<string>()]));
+  for (const link of links) {
+    services.add(link.from_service);
+    services.add(link.to_service);
+    incoming.set(link.from_service, incoming.get(link.from_service) ?? 0);
+    incoming.set(link.to_service, incoming.get(link.to_service) ?? 0);
+    outgoing.set(link.from_service, outgoing.get(link.from_service) ?? new Set());
+    outgoing.set(link.to_service, outgoing.get(link.to_service) ?? new Set());
+    if (!outgoing.get(link.from_service)!.has(link.to_service)) {
+      outgoing.get(link.from_service)!.add(link.to_service);
+      incoming.set(link.to_service, incoming.get(link.to_service)! + 1);
+    }
+  }
+  const pending = [...services].filter((service) => incoming.get(service) === 0).sort();
+  const ordered: string[] = [];
+  while (pending.length > 0) {
+    const service = pending.shift()!;
+    ordered.push(service);
+    for (const dependent of [...(outgoing.get(service) ?? [])].sort()) {
+      incoming.set(dependent, incoming.get(dependent)! - 1);
+      if (incoming.get(dependent) === 0) pending.push(dependent);
+    }
+    pending.sort();
+  }
+  return [...ordered, ...[...services].filter((service) => !ordered.includes(service)).sort()];
 }
 
 @Injectable()
@@ -267,12 +315,25 @@ export class DashboardService {
       .executeTakeFirst();
     if (!row) return undefined;
 
-    const timelineRows = await this.database.db
+    const windowMs = correlationWindow(row.investigation);
+    const candidateRows = await this.database.db
+      .selectFrom("incidents")
+      .select(["incident_id", "started_at", "last_event_at"])
+      .where("tenant_id", "=", tenantId)
+      .where("environment", "=", row.environment)
+      .where("incident_id", "!=", incidentId)
+      .where("last_event_at", ">=", new Date(Date.parse(row.started_at) - windowMs).toISOString())
+      .where("started_at", "<=", new Date(Date.parse(row.last_event_at) + windowMs).toISOString())
+      .execute();
+    const candidateIds = [incidentId, ...candidateRows.map((candidate) => candidate.incident_id)];
+    const eventRows = await this.database.db
       .selectFrom("incident_events")
       .innerJoin("source_events", "source_events.event_id", "incident_events.event_id")
       .select([
+        "incident_events.incident_id as source_incident_id",
         "source_events.event_id",
         "source_events.occurred_at",
+        "source_events.received_at",
         "source_events.service",
         "source_events.environment",
         "source_events.source",
@@ -283,28 +344,96 @@ export class DashboardService {
         "source_events.resource",
         "source_events.attributes"
       ])
-      .where("incident_events.incident_id", "=", incidentId)
+      .where("incident_events.incident_id", "in", candidateIds)
       .orderBy("source_events.occurred_at")
       .orderBy("source_events.event_id")
       .execute();
-
-    const timeline = timelineRows.map(({ version, trace_id, resource, attributes, occurred_at, ...event }) => ({
-      ...event,
-      occurred_at: isoTimestamp(occurred_at),
-      ...(version === null ? {} : { version }),
-      ...(trace_id === null ? {} : { trace_id }),
-      ...(resource === null ? {} : { resource }),
-      attributes: attributes as Record<string, unknown>
-    }));
+    const byIncident = new Map<string, Array<{ display: DashboardTimelineEvent; normalized: NormalizedEvent }>>();
+    const eventIncident = new Map<string, string>();
+    for (const event of eventRows) {
+      const normalized: NormalizedEvent = {
+        event_id: event.event_id,
+        occurred_at: isoTimestamp(event.occurred_at),
+        received_at: isoTimestamp(event.received_at),
+        tenant_id: tenantId,
+        environment: row.environment,
+        service: event.service,
+        source: event.source,
+        event_type: event.event_type,
+        severity: event.severity,
+        ...(event.version === null ? {} : { version: event.version }),
+        ...(event.trace_id === null ? {} : { trace_id: event.trace_id }),
+        ...(event.resource === null ? {} : { resource: event.resource }),
+        attributes: event.attributes as Record<string, unknown>
+      };
+      const display = (() => {
+        const { received_at: _receivedAt, tenant_id: _tenantId, ...value } = normalized;
+        return value;
+      })();
+      byIncident.set(event.source_incident_id, [...(byIncident.get(event.source_incident_id) ?? []), { display, normalized }]);
+      eventIncident.set(event.event_id, event.source_incident_id);
+    }
+    const links = crossServiceLinks([...byIncident.values()].flatMap((events) => events.map((event) => event.normalized)), windowMs);
+    const linkedIncidents = new Map<string, Set<string>>([[incidentId, new Set()]]);
+    for (const link of links) {
+      const ids = [...new Set(link.evidence_ids.flatMap((eventId) => {
+        const sourceIncidentId = eventIncident.get(eventId);
+        return sourceIncidentId ? [sourceIncidentId] : [];
+      }))];
+      for (const left of ids) for (const right of ids) if (left !== right) {
+        linkedIncidents.set(left, linkedIncidents.get(left) ?? new Set());
+        linkedIncidents.get(left)!.add(right);
+      }
+    }
+    const selectedIncidentIds = new Set<string>([incidentId]);
+    const pending = [incidentId];
+    while (pending.length > 0) {
+      const current = pending.pop()!;
+      for (const related of linkedIncidents.get(current) ?? []) if (!selectedIncidentIds.has(related)) {
+        selectedIncidentIds.add(related);
+        pending.push(related);
+      }
+    }
+    const selectedEvents = [...selectedIncidentIds].flatMap((id) => byIncident.get(id) ?? []);
+    const timeline = selectedEvents.map((event) => event.display).sort((left, right) => Date.parse(left.occurred_at) - Date.parse(right.occurred_at) || left.event_id.localeCompare(right.event_id));
+    const isCrossService = selectedIncidentIds.size > 1;
+    const crossInvestigation = isCrossService
+      ? correlate({ fixture_id: incidentId, scenario: `Cross-service evidence correlated for ${row.environment}`, expected_cause: "automatic_cross_service", events: selectedEvents.map((event) => event.normalized) } satisfies IncidentFixture, { eventWindowMs: windowMs })
+      : undefined;
+    const investigation = crossInvestigation ?? row.investigation;
     const eventIds = new Set(timeline.map((event) => event.event_id));
-    const aiExplanation = storedAiExplanation(record(row.investigation)?.ai_explanation, eventIds);
+    const storedExplanation = record(row.investigation)?.ai_explanation;
+    const aiExplanation = !isCrossService || record(storedExplanation)?.evidence_fingerprint === eventFingerprint(timeline)
+      ? storedAiExplanation(storedExplanation, eventIds)
+      : undefined;
+    const firstEvent = timeline[0];
+    const lastEvent = timeline.at(-1);
+    const summary = this.summary(row);
+    const crossLinks = links.filter((link) => link.evidence_ids.every((eventId) => {
+      const sourceIncidentId = eventIncident.get(eventId);
+      return sourceIncidentId !== undefined && selectedIncidentIds.has(sourceIncidentId);
+    }));
 
     return {
-      ...this.summary(row),
-      brief: this.brief(row.leading_cause, row.confidence, row.investigation, timeline),
+      ...summary,
+      ...(isCrossService ? {
+        started_at: firstEvent?.occurred_at ?? summary.started_at,
+        last_event_at: lastEvent?.occurred_at ?? summary.last_event_at,
+        event_count: timeline.length,
+        leading_cause: crossInvestigation!.leading_cause,
+        confidence: crossInvestigation!.confidence
+      } : {}),
+      brief: this.brief(crossInvestigation?.leading_cause ?? row.leading_cause, crossInvestigation?.confidence ?? row.confidence, investigation, timeline),
       timeline,
-      next_checks: this.nextChecks(row.investigation),
+      next_checks: this.nextChecks(investigation),
       ai_available: this.ai.available(),
+      ...(isCrossService ? {
+        cross_service: {
+          related_incident_ids: [...selectedIncidentIds].filter((id) => id !== incidentId).sort(),
+          services: orderedCrossServiceNames(timeline, crossLinks).map((service) => ({ service, event_count: timeline.filter((event) => event.service === service).length, role: service === row.service ? "primary" : "linked" })),
+          links: crossLinks
+        }
+      } : {}),
       ...(aiExplanation ? { ai_explanation: aiExplanation } : {})
     };
   }
@@ -331,7 +460,7 @@ export class DashboardService {
       const investigation = record(row.investigation) ?? {};
       const updated = await this.database.db
         .updateTable("incidents")
-        .set({ investigation: { ...investigation, ai_explanation: explanation }, updated_at: explanation.generated_at })
+        .set({ investigation: { ...investigation, ai_explanation: { ...explanation, evidence_fingerprint: eventFingerprint(incident.timeline) } }, updated_at: explanation.generated_at })
         .where("incident_id", "=", incidentId)
         .where("tenant_id", "=", tenantId)
         .where(sql<boolean>`xmin::text = ${row.row_version}`)

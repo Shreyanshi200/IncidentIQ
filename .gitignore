@@ -2,7 +2,10 @@ node_modules/
 .pnpm-store/
 .DS_Store
 coverage/
+output/
 .env
+IncidentIQ_PRD.pdf
+notes/
 dist/
 build/
 !integrations/

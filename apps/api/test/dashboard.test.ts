@@ -7,7 +7,7 @@ import { ApiKeysService } from "../src/api-keys.service.js";
 import { AiExplanationService } from "../src/ai-explanation.service.js";
 import { createApp } from "../src/app.js";
 import { DatabaseService } from "../src/database.js";
-import { DashboardService, type DashboardIncidentPage, type DashboardInvestigationBrief, type DashboardOverview, type DashboardTimelineEvent } from "../src/dashboard.service.js";
+import { DashboardService, type DashboardIncidentDetail, type DashboardIncidentPage, type DashboardInvestigationBrief, type DashboardOverview, type DashboardTimelineEvent } from "../src/dashboard.service.js";
 import { describeReportEvent } from "../src/incident-report.js";
 import { clearTestTenants } from "./database-cleanup.js";
 
@@ -309,6 +309,254 @@ test("dashboard lists tenant-scoped incidents, filters them, and returns their e
     assert.equal(crossTenantExplanation.status, 404);
   } finally {
     await clearTestTenants(app.get(DatabaseService), tenant, otherTenant);
+    await app.close();
+  }
+});
+
+test("dashboard builds an isolated multi-hop investigation from evidence-backed service links", { skip: !databaseUrl }, async () => {
+  const app = await createApp();
+  const tenant = `cross-service-${randomUUID()}`;
+  const otherTenant = `cross-service-${randomUUID()}`;
+  await app.listen(0, "127.0.0.1");
+  try {
+    const baseUrl = `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}`;
+    const apiKeys = app.get(ApiKeysService);
+    const ingestionKey = (await apiKeys.create("ingest", tenant)).key;
+    const readKey = (await apiKeys.create("read", tenant)).key;
+    const otherIngestionKey = (await apiKeys.create("ingest", otherTenant)).key;
+    const database = `postgres-${randomUUID()}`;
+    const payments = `payments-${randomUUID()}`;
+    const checkout = `checkout-${randomUUID()}`;
+    const catalog = `catalog-${randomUUID()}`;
+    const environment = "production";
+    const events = [
+      {
+        event_id: `checkout-deploy-${randomUUID()}`,
+        occurred_at: "2026-11-21T10:00:00.000Z",
+        tenant_id: tenant,
+        environment,
+        service: checkout,
+        source: "github_actions",
+        event_type: "deployment",
+        severity: "info",
+        version: "8.2.0",
+        attributes: { deployment_status: "success" }
+      },
+      {
+        event_id: `database-timeout-${randomUUID()}`,
+        occurred_at: "2026-11-21T10:01:00.000Z",
+        tenant_id: tenant,
+        environment,
+        service: database,
+        source: "node_sdk",
+        event_type: "database_timeout",
+        severity: "error",
+        trace_id: "trace-database-payments",
+        attributes: { message: "Database connection timed out" }
+      },
+      {
+        event_id: `payments-database-${randomUUID()}`,
+        occurred_at: "2026-11-21T10:01:01.000Z",
+        tenant_id: tenant,
+        environment,
+        service: payments,
+        source: "node_sdk",
+        event_type: "dependency_timeout",
+        severity: "critical",
+        trace_id: "trace-database-payments",
+        attributes: { dependency: database, route: "POST /authorize", message: "Database connection timed out" }
+      },
+      {
+        event_id: `payments-checkout-a-${randomUUID()}`,
+        occurred_at: "2026-11-21T10:01:30.000Z",
+        tenant_id: tenant,
+        environment,
+        service: payments,
+        source: "node_sdk",
+        event_type: "authorization_timeout",
+        severity: "error",
+        trace_id: "trace-payments-checkout-a",
+        attributes: { message: "Payment authorization timed out" }
+      },
+      {
+        event_id: `checkout-payments-a-${randomUUID()}`,
+        occurred_at: "2026-11-21T10:01:31.000Z",
+        tenant_id: tenant,
+        environment,
+        service: checkout,
+        source: "node_sdk",
+        event_type: "checkout_failed",
+        severity: "critical",
+        trace_id: "trace-payments-checkout-a",
+        attributes: { dependency: payments, route: "POST /checkout", message: "Payment authorization timed out" }
+      },
+      {
+        event_id: `payments-checkout-b-${randomUUID()}`,
+        occurred_at: "2026-11-21T10:02:00.000Z",
+        tenant_id: tenant,
+        environment,
+        service: payments,
+        source: "node_sdk",
+        event_type: "capture_timeout",
+        severity: "error",
+        trace_id: "trace-payments-checkout-b",
+        attributes: { message: "Payment capture timed out" }
+      },
+      {
+        event_id: `checkout-payments-b-${randomUUID()}`,
+        occurred_at: "2026-11-21T10:02:01.000Z",
+        tenant_id: tenant,
+        environment,
+        service: checkout,
+        source: "node_sdk",
+        event_type: "checkout_failed",
+        severity: "critical",
+        trace_id: "trace-payments-checkout-b",
+        attributes: { dependency: payments, route: "POST /checkout", message: "Payment capture timed out" }
+      },
+      {
+        event_id: `unrelated-${randomUUID()}`,
+        occurred_at: "2026-11-21T10:02:01.000Z",
+        tenant_id: tenant,
+        environment,
+        service: catalog,
+        source: "node_sdk",
+        event_type: "exception",
+        severity: "error",
+        attributes: { message: "Independent catalog failure" }
+      },
+      {
+        event_id: `staging-${randomUUID()}`,
+        occurred_at: "2026-11-21T10:02:02.000Z",
+        tenant_id: tenant,
+        environment: "staging",
+        service: checkout,
+        source: "node_sdk",
+        event_type: "checkout_failed",
+        severity: "critical",
+        trace_id: "trace-payments-checkout-b",
+        attributes: { dependency: payments, message: "Staging-only failure" }
+      }
+    ];
+    for (const event of events) {
+      const response = await fetch(`${baseUrl}/v1/events/batch`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${ingestionKey}` },
+        body: JSON.stringify({ events: [event] })
+      });
+      assert.deepEqual(await response.json(), { accepted: 1, duplicates: 0 });
+    }
+    const otherTenantEvent = { ...events[6], event_id: `other-tenant-${randomUUID()}`, tenant_id: otherTenant, occurred_at: "2026-11-21T10:02:03.000Z" };
+    const otherResponse = await fetch(`${baseUrl}/v1/events/batch`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${otherIngestionKey}` },
+      body: JSON.stringify({ events: [otherTenantEvent] })
+    });
+    assert.deepEqual(await otherResponse.json(), { accepted: 1, duplicates: 0 });
+    const session = await fetch(`${baseUrl}/v1/dashboard/session`, { method: "POST", headers: { authorization: `Bearer ${readKey}` } });
+    const cookie = session.headers.get("set-cookie")?.split(";")[0];
+    assert.ok(cookie);
+    const listed = await fetch(`${baseUrl}/v1/dashboard/incidents?service=${encodeURIComponent(checkout)}&environment=${environment}`, { headers: { cookie } });
+    const checkoutIncident = (await listed.json() as DashboardIncidentPage).items[0];
+    assert.ok(checkoutIncident);
+    const detail = await fetch(`${baseUrl}/v1/dashboard/incidents/${checkoutIncident.incident_id}`, { headers: { cookie } });
+    const incident = await detail.json() as {
+      event_count: number;
+      leading_cause: string;
+      timeline: Array<{ event_id: string }>;
+      cross_service?: { related_incident_ids: string[]; services: Array<{ service: string; role: string }>; links: Array<{ reason: string; from_service: string; to_service: string }> };
+    };
+    assert.equal(incident.event_count, 7);
+    assert.equal(incident.leading_cause, "downstream_timeout");
+    assert.deepEqual(incident.timeline.map((event) => event.event_id), events.slice(0, 7).map((event) => event.event_id));
+    assert.ok(incident.cross_service);
+    assert.equal(incident.cross_service.related_incident_ids.length, 2);
+    assert.deepEqual(incident.cross_service.services, [
+      { service: database, event_count: 1, role: "linked" },
+      { service: payments, event_count: 3, role: "linked" },
+      { service: checkout, event_count: 3, role: "primary" }
+    ]);
+    assert.ok(incident.cross_service.links.some((link) => link.reason === "shared_trace" && link.from_service === database && link.to_service === payments));
+    assert.ok(incident.cross_service.links.some((link) => link.reason === "declared_dependency" && link.from_service === database && link.to_service === payments));
+    assert.ok(incident.cross_service.links.some((link) => link.reason === "shared_trace" && link.from_service === payments && link.to_service === checkout));
+    assert.ok(incident.cross_service.links.some((link) => link.reason === "declared_dependency" && link.from_service === payments && link.to_service === checkout));
+    assert.ok(!incident.cross_service.services.some((service) => service.service === catalog));
+    assert.ok(!incident.timeline.some((event) => event.event_id === events[7]?.event_id || event.event_id === events[8]?.event_id || event.event_id === otherTenantEvent.event_id));
+    const report = await fetch(`${baseUrl}/v1/dashboard/incidents/${checkoutIncident.incident_id}/report`, { headers: { cookie } });
+    assert.equal(report.status, 200);
+    assert.match(report.headers.get("content-type") ?? "", /application\/pdf/);
+    assert.equal(Buffer.from(await report.arrayBuffer()).subarray(0, 5).toString("ascii"), "%PDF-");
+  } finally {
+    await clearTestTenants(app.get(DatabaseService), tenant);
+    await clearTestTenants(app.get(DatabaseService), otherTenant);
+    await app.close();
+  }
+});
+
+test("dashboard considers every incident inside the evidence window", { skip: !databaseUrl }, async () => {
+  const app = await createApp();
+  const tenant = `cross-service-volume-${randomUUID()}`;
+  await app.listen(0, "127.0.0.1");
+  try {
+    const baseUrl = `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}`;
+    const readKey = (await app.get(ApiKeysService).create("read", tenant)).key;
+    const database = app.get(DatabaseService).db;
+    const noise = Array.from({ length: 101 }, (_, index) => ({
+      incidentId: `volume-noise-${randomUUID()}-${index}`,
+      eventId: `volume-noise-event-${randomUUID()}-${index}`,
+      service: `noise-${index}`
+    }));
+    const linkedIncidentId = `volume-linked-${randomUUID()}`;
+    const linkedEventId = `volume-linked-event-${randomUUID()}`;
+    const primaryIncidentId = `volume-primary-${randomUUID()}`;
+    const primaryEventId = `volume-primary-event-${randomUUID()}`;
+    const incidentRows = [
+      ...noise.map((item) => ({ incident_id: item.incidentId, service: item.service, started_at: "2026-11-21T10:05:00.000Z", last_event_at: "2026-11-21T10:05:00.000Z" })),
+      { incident_id: linkedIncidentId, service: "payments-api", started_at: "2026-11-21T10:00:00.000Z", last_event_at: "2026-11-21T10:00:00.000Z" },
+      { incident_id: primaryIncidentId, service: "checkout-api", started_at: "2026-11-21T10:05:01.000Z", last_event_at: "2026-11-21T10:05:01.000Z" }
+    ];
+    await database.insertInto("incidents").values(incidentRows.map((item) => ({
+      ...item,
+      tenant_id: tenant,
+      environment: "production",
+      state: "open",
+      event_count: 1,
+      leading_cause: "ambiguous",
+      confidence: "low",
+      investigation: { next_checks: [] }
+    }))).execute();
+    const sourceRows = [
+      ...noise.map((item) => ({ event_id: item.eventId, service: item.service, occurred_at: "2026-11-21T10:05:00.000Z", trace_id: null, attributes: {} })),
+      { event_id: linkedEventId, service: "payments-api", occurred_at: "2026-11-21T10:00:00.000Z", trace_id: "volume-shared-trace", attributes: {} },
+      { event_id: primaryEventId, service: "checkout-api", occurred_at: "2026-11-21T10:05:01.000Z", trace_id: "volume-shared-trace", attributes: { dependency: "payments-api" } }
+    ];
+    await database.insertInto("source_events").values(sourceRows.map((item) => ({
+      ...item,
+      received_at: item.occurred_at,
+      tenant_id: tenant,
+      environment: "production",
+      source: "node_sdk" as const,
+      event_type: "dependency_timeout",
+      severity: "error" as const,
+      version: null,
+      resource: null
+    }))).execute();
+    await database.insertInto("incident_events").values([
+      ...noise.map((item) => ({ incident_id: item.incidentId, event_id: item.eventId })),
+      { incident_id: linkedIncidentId, event_id: linkedEventId },
+      { incident_id: primaryIncidentId, event_id: primaryEventId }
+    ]).execute();
+
+    const session = await fetch(`${baseUrl}/v1/dashboard/session`, { method: "POST", headers: { authorization: `Bearer ${readKey}` } });
+    const cookie = session.headers.get("set-cookie")?.split(";")[0];
+    assert.ok(cookie);
+    const response = await fetch(`${baseUrl}/v1/dashboard/incidents/${primaryIncidentId}`, { headers: { cookie } });
+    const incident = await response.json() as DashboardIncidentDetail;
+    assert.equal(response.status, 200);
+    assert.deepEqual(incident.timeline.map((event) => event.event_id), [linkedEventId, primaryEventId]);
+    assert.equal(incident.cross_service?.related_incident_ids.includes(linkedIncidentId), true);
+  } finally {
+    await clearTestTenants(app.get(DatabaseService), tenant);
     await app.close();
   }
 });

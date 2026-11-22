@@ -124,7 +124,7 @@ For every result, verify all of the following:
 - no secret, API key, database credential, or evidence from another incident appears; and
 - refreshing the page shows the same cached explanation and generation timestamp instead of silently generating another one.
 
-Finally, download each incident report. The PDF should include the cited AI review as an optional section while retaining the deterministic ranking and full evidence timeline.
+Finally, download each incident report. The PDF should include a concise AI review as an optional section while retaining the deterministic ranking and full chronological timeline. Exact event citations remain available in the dashboard instead of being repeated throughout the report.
 
 The ambiguous scenario is the most important safety test. A longer answer is not necessarily better: the correct behavior is to preserve uncertainty and ask for discriminating evidence.
 

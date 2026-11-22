@@ -141,10 +141,11 @@ Open `http://localhost:5173`, paste the read key, and select **Open dashboard**.
 - Authenticated, tenant-scoped event ingestion with shared schema validation and configured secret-field redaction.
 - PostgreSQL storage with migrations, idempotent event IDs, and duplicate-delivery protection.
 - Automatic incident creation and configurable time-window grouping for error and critical signals.
+- Evidence-backed cross-service investigations that link service-local incidents only through shared traces or declared dependency failures.
 - Deterministic candidate ranking with supporting evidence, counterevidence, confidence, and contextual next checks.
 - Optional, operator-requested AI explanations with strict structured output, event-ID citations, cached results, and deterministic fallback.
 - React dashboard with Overview and Investigations views, filtering, cursor pagination, readable timelines, and secure read-key sessions.
-- Navigable PDF incident reports containing the investigation summary, ranked candidates, optional cited AI review, validation plan, and complete evidence timeline.
+- Navigable PDF incident reports containing the investigation summary, ranked candidates, compact service propagation, optional AI summary, validation plan, and complete chronological timeline.
 - Fail-open Node.js SDK and GitHub Action, plus a read-only Kubernetes collector and Alertmanager webhook integration.
 - CLI workflows for setup, evidence inspection, fixtures, correlation, and saved incidents.
 
@@ -188,7 +189,7 @@ See [Architecture](docs/architecture.md) for component responsibilities, data fl
 
 ## Product tour
 
-The gallery uses the included checkout regression fixture: a release followed by application errors, alerts, pod degradation, rollback, and recovery.
+The gallery follows the operator journey from secure login to a cited investigation. The focused investigation views use the larger commerce cascade fixture to show how IncidentIQ keeps multi-service evidence readable.
 
 <table>
   <tr>
@@ -217,21 +218,33 @@ The gallery uses the included checkout regression fixture: a release followed by
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <strong>5. Follow recommended checks</strong><br><br>
+      <strong>5. Trace cross-service propagation</strong><br><br>
+      <a href="assets/screenshots/cross-service-analysis.png"><img src="assets/screenshots/cross-service-analysis.png" alt="Compact cross-service propagation view with six services and evidence-backed relationships" width="100%"></a><br>
+      <sub>See the affected services and summarized trace or dependency links; expand a relationship only when you need its exact citations.</sub>
+    </td>
+    <td width="50%" valign="top">
+      <strong>6. Review the optional AI explanation</strong><br><br>
+      <a href="assets/screenshots/ai-evidence-review.png"><img src="assets/screenshots/ai-evidence-review.png" alt="Evidence-bounded AI review with cited observations and suggested checks" width="100%"></a><br>
+      <sub>Request a second opinion grounded in stored evidence while the deterministic ranking remains the source of truth.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <strong>7. Follow recommended checks</strong><br><br>
       <a href="assets/screenshots/recommended-next-steps.png"><img src="assets/screenshots/recommended-next-steps.png" alt="Evidence-based validation plan with recommended next checks" width="100%"></a><br>
       <sub>Use the incident-specific validation plan before choosing a remediation.</sub>
     </td>
     <td width="50%" valign="top">
-      <strong>6. Read the evidence timeline</strong><br><br>
+      <strong>8. Read the evidence timeline</strong><br><br>
       <a href="assets/screenshots/evidence-timeline.png"><img src="assets/screenshots/evidence-timeline.png" alt="Ordered deployment, Kubernetes, application, and Alertmanager evidence" width="100%"></a><br>
       <sub>Follow readable events in time order and expand their original attributes.</sub>
     </td>
   </tr>
   <tr>
     <td colspan="2" align="center" valign="top">
-      <strong>7. Download the incident report</strong><br><br>
+      <strong>9. Download the incident report</strong><br><br>
       <a href="assets/screenshots/incident-report-cover.png"><img src="assets/screenshots/incident-report-cover.png" alt="First page of the IncidentIQ PDF incident report" width="42%"></a><br>
-      <sub>Export a navigable PDF containing the summary, ranked candidates, supporting and counterevidence, validation plan, and complete timeline.</sub>
+      <sub>Export a concise, navigable PDF with summarized reasoning and one complete chronological timeline; exact citations and raw attributes stay in the dashboard.</sub>
     </td>
   </tr>
 </table>
@@ -245,6 +258,7 @@ The gallery uses the included checkout regression fixture: a release followed by
 | [Dashboard](docs/dashboard.md) | Local or hosted dashboard setup and investigation workflow |
 | [AI explanations](docs/ai-explanations.md) | Optional OpenAI setup, evidence boundary, data handling, and production guidance |
 | [AI deep-dive test](docs/ai-deep-dive.md) | Rigorous 40-event, multi-service investigation and AI validation workflow |
+| [Cross-service correlation](docs/cross-service-correlation.md) | How IncidentIQ links service-local incidents through traces and declared dependencies |
 | [Automatic incidents](docs/automatic-incidents.md) | Incident opening, grouping, realistic fixtures, and current boundaries |
 | [Production deployment](docs/deployment/api-production.md) | HTTPS, PostgreSQL, static dashboard hosting, backups, upgrades, and rollback |
 | [Operations and guardrails](docs/operations.md) | API-key rotation, evidence retention, health probes, request limits, and AI budgets |

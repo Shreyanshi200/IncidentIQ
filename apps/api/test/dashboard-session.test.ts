@@ -33,8 +33,10 @@ test("production requires a stable dashboard session secret", () => {
 test("production trusts exactly one reverse proxy hop for per-client limits", async () => {
   const previousEnvironment = process.env.NODE_ENV;
   const previousSecret = process.env.INCIDENTIQ_SESSION_SECRET;
+  const previousDatabaseUrl = process.env.DATABASE_URL;
   process.env.NODE_ENV = "production";
   process.env.INCIDENTIQ_SESSION_SECRET = "x".repeat(48);
+  process.env.DATABASE_URL ??= "postgresql://incidentiq:test@127.0.0.1:5432/incidentiq";
   const app = await createApp();
   try {
     const express = app.getHttpAdapter().getInstance() as { get(name: string): unknown };
@@ -43,5 +45,6 @@ test("production trusts exactly one reverse proxy hop for per-client limits", as
     await app.close();
     if (previousEnvironment === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = previousEnvironment;
     if (previousSecret === undefined) delete process.env.INCIDENTIQ_SESSION_SECRET; else process.env.INCIDENTIQ_SESSION_SECRET = previousSecret;
+    if (previousDatabaseUrl === undefined) delete process.env.DATABASE_URL; else process.env.DATABASE_URL = previousDatabaseUrl;
   }
 });

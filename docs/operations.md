@@ -100,4 +100,4 @@ Production mode additionally requires a stable `INCIDENTIQ_SESSION_SECRET`. The 
 
 Production mode trusts exactly one reverse-proxy hop when determining the client address used for dashboard session limits. This matches the supported Nginx-to-API deployment. Keep the API loopback-bound as shown in the production guide; do not expose it directly or add another proxy layer without updating this topology.
 
-Session and AI rate counters are in memory because v0.8.1 supports one API process. They reset after restart and are not a distributed quota or billing system. A future multi-instance deployment must move these counters to shared infrastructure.
+Session and AI rate counters are in memory because the supported deployment uses one API process. They reset after restart and are not a distributed quota or billing system. A future multi-instance deployment must move these counters to shared infrastructure.

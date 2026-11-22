@@ -1,0 +1,1635 @@
+{
+  "fixture_id": "production-commerce-platform-cascade",
+  "scenario": "A database capacity regression propagates through orders, payments, inventory, checkout, and edge services while concurrent deployments, Kubernetes failures, failed rollbacks, and unrelated production noise create competing explanations.",
+  "expected_cause": "downstream_timeout",
+  "events": [
+    {
+      "event_id": "mega-platform-baseline",
+      "occurred_at": "2026-11-22T09:58:00.000Z",
+      "received_at": "2026-11-22T09:58:01.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "edge-api",
+      "source": "node_sdk",
+      "event_type": "service_state",
+      "severity": "info",
+      "version": "8.2.0",
+      "attributes": {
+        "status": "healthy",
+        "error_rate": "0.2%",
+        "p95_latency": "240ms",
+        "request_rate": "680rps"
+      }
+    },
+    {
+      "event_id": "mega-postgres-baseline",
+      "occurred_at": "2026-11-22T09:58:10.000Z",
+      "received_at": "2026-11-22T09:58:11.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "postgres-primary",
+      "source": "node_sdk",
+      "event_type": "runtime_metric",
+      "severity": "info",
+      "resource": "database/postgres-primary",
+      "attributes": {
+        "connections": 92,
+        "max_connections": 300,
+        "lock_waits": 0,
+        "cpu": "42%"
+      }
+    },
+    {
+      "event_id": "mega-checkout-release",
+      "occurred_at": "2026-11-22T10:00:00.000Z",
+      "received_at": "2026-11-22T10:00:01.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "checkout-api",
+      "source": "github_actions",
+      "event_type": "deployment",
+      "severity": "info",
+      "version": "4.8.0",
+      "resource": "deployment/checkout-api",
+      "attributes": {
+        "state": "success",
+        "ref": "main",
+        "commit_sha": "megacheckoutrelease000000000000000000000",
+        "change": "checkout response metadata and retry logging"
+      }
+    },
+    {
+      "event_id": "mega-inventory-release",
+      "occurred_at": "2026-11-22T10:00:20.000Z",
+      "received_at": "2026-11-22T10:00:21.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "inventory-api",
+      "source": "github_actions",
+      "event_type": "deployment",
+      "severity": "info",
+      "version": "7.3.0",
+      "resource": "deployment/inventory-api",
+      "attributes": {
+        "state": "success",
+        "ref": "main",
+        "commit_sha": "megainventoryrelease00000000000000000000",
+        "change": "reservation cache cleanup"
+      }
+    },
+    {
+      "event_id": "mega-orders-release",
+      "occurred_at": "2026-11-22T10:00:40.000Z",
+      "received_at": "2026-11-22T10:00:41.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "orders-api",
+      "source": "github_actions",
+      "event_type": "deployment",
+      "severity": "info",
+      "version": "6.4.0",
+      "resource": "deployment/orders-api",
+      "attributes": {
+        "state": "success",
+        "ref": "main",
+        "commit_sha": "megaordersrelease00000000000000000000000",
+        "change": "order audit enrichment"
+      }
+    },
+    {
+      "event_id": "mega-postgres-config",
+      "occurred_at": "2026-11-22T10:01:00.000Z",
+      "received_at": "2026-11-22T10:01:01.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "postgres-primary",
+      "source": "github_actions",
+      "event_type": "deployment",
+      "severity": "info",
+      "version": "15.6-config-42",
+      "resource": "deployment/postgres-primary",
+      "attributes": {
+        "state": "success",
+        "ref": "main",
+        "commit_sha": "megapostgresconfig0000000000000000000000",
+        "change": "max_connections 300 -> 90; statement_timeout 5s -> 900ms"
+      }
+    },
+    {
+      "event_id": "mega-postgres-ready",
+      "occurred_at": "2026-11-22T10:01:30.000Z",
+      "received_at": "2026-11-22T10:01:31.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "postgres-primary",
+      "source": "kubernetes",
+      "event_type": "deployment_recovered",
+      "severity": "info",
+      "version": "15.6-config-42",
+      "resource": "statefulset/postgres-primary",
+      "attributes": {
+        "status": "ready",
+        "ready_replicas": 1,
+        "desired_replicas": 1
+      }
+    },
+    {
+      "event_id": "mega-checkout-smoke",
+      "occurred_at": "2026-11-22T10:01:50.000Z",
+      "received_at": "2026-11-22T10:01:51.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "checkout-api",
+      "source": "github_actions",
+      "event_type": "smoke_test",
+      "severity": "info",
+      "version": "4.8.0",
+      "resource": "route/POST /checkout",
+      "attributes": {
+        "status": "passed",
+        "response_code": 200
+      }
+    },
+    {
+      "event_id": "mega-inventory-smoke",
+      "occurred_at": "2026-11-22T10:02:00.000Z",
+      "received_at": "2026-11-22T10:02:01.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "inventory-api",
+      "source": "github_actions",
+      "event_type": "smoke_test",
+      "severity": "info",
+      "version": "7.3.0",
+      "resource": "route/POST /reservations",
+      "attributes": {
+        "status": "passed",
+        "response_code": 200
+      }
+    },
+    {
+      "event_id": "mega-orders-smoke",
+      "occurred_at": "2026-11-22T10:02:10.000Z",
+      "received_at": "2026-11-22T10:02:11.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "orders-api",
+      "source": "github_actions",
+      "event_type": "smoke_test",
+      "severity": "info",
+      "version": "6.4.0",
+      "resource": "route/POST /orders",
+      "attributes": {
+        "status": "passed",
+        "response_code": 200
+      }
+    },
+    {
+      "event_id": "mega-postgres-connections-warning",
+      "occurred_at": "2026-11-22T10:02:25.000Z",
+      "received_at": "2026-11-22T10:02:26.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "postgres-primary",
+      "source": "alertmanager",
+      "event_type": "alert_firing",
+      "severity": "warning",
+      "attributes": {
+        "alertname": "PostgresConnectionsHigh",
+        "current_value": "88",
+        "threshold": "80",
+        "window": "5m"
+      }
+    },
+    {
+      "event_id": "mega-postgres-lock-warning",
+      "occurred_at": "2026-11-22T10:02:35.000Z",
+      "received_at": "2026-11-22T10:02:36.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "postgres-primary",
+      "source": "node_sdk",
+      "event_type": "runtime_metric",
+      "severity": "warning",
+      "resource": "database/postgres-primary",
+      "attributes": {
+        "connections": 89,
+        "max_connections": 90,
+        "lock_waits": 21,
+        "queue_depth": 38,
+        "query_p95_ms": 870
+      }
+    },
+    {
+      "event_id": "mega-a-postgres-primary",
+      "occurred_at": "2026-11-22T10:02:50.000Z",
+      "received_at": "2026-11-22T10:02:51.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "postgres-primary",
+      "source": "node_sdk",
+      "event_type": "database_timeout",
+      "severity": "error",
+      "version": "15.6-config-42",
+      "trace_id": "trace-mega-a",
+      "resource": "database/postgres-primary",
+      "attributes": {
+        "message": "Failure propagated through the transaction path",
+        "status_code": 504,
+        "retry_count": 0
+      }
+    },
+    {
+      "event_id": "mega-a-orders-api",
+      "occurred_at": "2026-11-22T10:02:52.000Z",
+      "received_at": "2026-11-22T10:02:53.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "orders-api",
+      "source": "node_sdk",
+      "event_type": "database_timeout",
+      "severity": "error",
+      "version": "6.4.0",
+      "trace_id": "trace-mega-a",
+      "resource": "route/POST /orders",
+      "attributes": {
+        "message": "Failure propagated through the transaction path",
+        "dependency": "postgres-primary",
+        "status_code": 504,
+        "retry_count": 0
+      }
+    },
+    {
+      "event_id": "mega-a-payments-api",
+      "occurred_at": "2026-11-22T10:02:54.000Z",
+      "received_at": "2026-11-22T10:02:55.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "payments-api",
+      "source": "node_sdk",
+      "event_type": "dependency_timeout",
+      "severity": "error",
+      "version": "9.1.2",
+      "trace_id": "trace-mega-a",
+      "resource": "service/orders-api",
+      "attributes": {
+        "message": "Failure propagated through the transaction path",
+        "dependency": "orders-api",
+        "status_code": 504,
+        "retry_count": 0
+      }
+    },
+    {
+      "event_id": "mega-a-checkout-api",
+      "occurred_at": "2026-11-22T10:02:56.000Z",
+      "received_at": "2026-11-22T10:02:57.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "checkout-api",
+      "source": "node_sdk",
+      "event_type": "checkout_failed",
+      "severity": "error",
+      "version": "4.8.0",
+      "trace_id": "trace-mega-a",
+      "resource": "route/POST /checkout",
+      "attributes": {
+        "message": "Failure propagated through the transaction path",
+        "dependency": "payments-api",
+        "route": "POST /checkout",
+        "status_code": 504,
+        "retry_count": 0
+      }
+    },
+    {
+      "event_id": "mega-a-edge-api",
+      "occurred_at": "2026-11-22T10:02:58.000Z",
+      "received_at": "2026-11-22T10:02:59.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "edge-api",
+      "source": "node_sdk",
+      "event_type": "dependency_timeout",
+      "severity": "error",
+      "version": "8.2.0",
+      "trace_id": "trace-mega-a",
+      "resource": "route/POST /api/checkout",
+      "attributes": {
+        "message": "Failure propagated through the transaction path",
+        "dependency": "checkout-api",
+        "route": "POST /api/checkout",
+        "status_code": 502,
+        "retry_count": 0
+      }
+    },
+    {
+      "event_id": "mega-b-postgres-primary",
+      "occurred_at": "2026-11-22T10:03:38.000Z",
+      "received_at": "2026-11-22T10:03:39.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "postgres-primary",
+      "source": "node_sdk",
+      "event_type": "database_timeout",
+      "severity": "error",
+      "version": "15.6-config-42",
+      "trace_id": "trace-mega-b",
+      "resource": "database/postgres-primary",
+      "attributes": {
+        "message": "Failure propagated through the transaction path",
+        "status_code": 504,
+        "retry_count": 0
+      }
+    },
+    {
+      "event_id": "mega-b-orders-api",
+      "occurred_at": "2026-11-22T10:03:40.000Z",
+      "received_at": "2026-11-22T10:03:41.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "orders-api",
+      "source": "node_sdk",
+      "event_type": "database_timeout",
+      "severity": "error",
+      "version": "6.4.0",
+      "trace_id": "trace-mega-b",
+      "resource": "route/POST /orders",
+      "attributes": {
+        "message": "Failure propagated through the transaction path",
+        "dependency": "postgres-primary",
+        "status_code": 504,
+        "retry_count": 0
+      }
+    },
+    {
+      "event_id": "mega-b-payments-api",
+      "occurred_at": "2026-11-22T10:03:42.000Z",
+      "received_at": "2026-11-22T10:03:43.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "payments-api",
+      "source": "node_sdk",
+      "event_type": "dependency_timeout",
+      "severity": "error",
+      "version": "9.1.2",
+      "trace_id": "trace-mega-b",
+      "resource": "service/orders-api",
+      "attributes": {
+        "message": "Failure propagated through the transaction path",
+        "dependency": "orders-api",
+        "status_code": 504,
+        "retry_count": 0
+      }
+    },
+    {
+      "event_id": "mega-b-checkout-api",
+      "occurred_at": "2026-11-22T10:03:44.000Z",
+      "received_at": "2026-11-22T10:03:45.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "checkout-api",
+      "source": "node_sdk",
+      "event_type": "checkout_failed",
+      "severity": "error",
+      "version": "4.8.0",
+      "trace_id": "trace-mega-b",
+      "resource": "route/POST /checkout",
+      "attributes": {
+        "message": "Failure propagated through the transaction path",
+        "dependency": "payments-api",
+        "route": "POST /checkout",
+        "status_code": 504,
+        "retry_count": 0
+      }
+    },
+    {
+      "event_id": "mega-b-edge-api",
+      "occurred_at": "2026-11-22T10:03:46.000Z",
+      "received_at": "2026-11-22T10:03:47.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "edge-api",
+      "source": "node_sdk",
+      "event_type": "dependency_timeout",
+      "severity": "error",
+      "version": "8.2.0",
+      "trace_id": "trace-mega-b",
+      "resource": "route/POST /api/checkout",
+      "attributes": {
+        "message": "Failure propagated through the transaction path",
+        "dependency": "checkout-api",
+        "route": "POST /api/checkout",
+        "status_code": 502,
+        "retry_count": 0
+      }
+    },
+    {
+      "event_id": "mega-c-postgres-primary",
+      "occurred_at": "2026-11-22T10:04:26.000Z",
+      "received_at": "2026-11-22T10:04:27.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "postgres-primary",
+      "source": "node_sdk",
+      "event_type": "database_timeout",
+      "severity": "error",
+      "version": "15.6-config-42",
+      "trace_id": "trace-mega-c",
+      "resource": "database/postgres-primary",
+      "attributes": {
+        "message": "Failure propagated through the transaction path",
+        "status_code": 504,
+        "retry_count": 0
+      }
+    },
+    {
+      "event_id": "mega-c-orders-api",
+      "occurred_at": "2026-11-22T10:04:28.000Z",
+      "received_at": "2026-11-22T10:04:29.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "orders-api",
+      "source": "node_sdk",
+      "event_type": "database_timeout",
+      "severity": "error",
+      "version": "6.4.0",
+      "trace_id": "trace-mega-c",
+      "resource": "route/POST /orders",
+      "attributes": {
+        "message": "Failure propagated through the transaction path",
+        "dependency": "postgres-primary",
+        "status_code": 504,
+        "retry_count": 0
+      }
+    },
+    {
+      "event_id": "mega-c-payments-api",
+      "occurred_at": "2026-11-22T10:04:30.000Z",
+      "received_at": "2026-11-22T10:04:31.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "payments-api",
+      "source": "node_sdk",
+      "event_type": "dependency_timeout",
+      "severity": "error",
+      "version": "9.1.2",
+      "trace_id": "trace-mega-c",
+      "resource": "service/orders-api",
+      "attributes": {
+        "message": "Failure propagated through the transaction path",
+        "dependency": "orders-api",
+        "status_code": 504,
+        "retry_count": 1
+      }
+    },
+    {
+      "event_id": "mega-c-checkout-api",
+      "occurred_at": "2026-11-22T10:04:32.000Z",
+      "received_at": "2026-11-22T10:04:33.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "checkout-api",
+      "source": "node_sdk",
+      "event_type": "checkout_failed",
+      "severity": "error",
+      "version": "4.8.0",
+      "trace_id": "trace-mega-c",
+      "resource": "route/POST /checkout",
+      "attributes": {
+        "message": "Failure propagated through the transaction path",
+        "dependency": "payments-api",
+        "route": "POST /checkout",
+        "status_code": 504,
+        "retry_count": 1
+      }
+    },
+    {
+      "event_id": "mega-c-edge-api",
+      "occurred_at": "2026-11-22T10:04:34.000Z",
+      "received_at": "2026-11-22T10:04:35.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "edge-api",
+      "source": "node_sdk",
+      "event_type": "dependency_timeout",
+      "severity": "error",
+      "version": "8.2.0",
+      "trace_id": "trace-mega-c",
+      "resource": "route/POST /api/checkout",
+      "attributes": {
+        "message": "Failure propagated through the transaction path",
+        "dependency": "checkout-api",
+        "route": "POST /api/checkout",
+        "status_code": 502,
+        "retry_count": 1
+      }
+    },
+    {
+      "event_id": "mega-d-postgres-primary",
+      "occurred_at": "2026-11-22T10:05:14.000Z",
+      "received_at": "2026-11-22T10:05:15.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "postgres-primary",
+      "source": "node_sdk",
+      "event_type": "database_timeout",
+      "severity": "critical",
+      "version": "15.6-config-42",
+      "trace_id": "trace-mega-d",
+      "resource": "database/postgres-primary",
+      "attributes": {
+        "message": "Failure propagated through the transaction path",
+        "status_code": 504,
+        "retry_count": 1
+      }
+    },
+    {
+      "event_id": "mega-d-orders-api",
+      "occurred_at": "2026-11-22T10:05:16.000Z",
+      "received_at": "2026-11-22T10:05:17.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "orders-api",
+      "source": "node_sdk",
+      "event_type": "database_timeout",
+      "severity": "critical",
+      "version": "6.4.0",
+      "trace_id": "trace-mega-d",
+      "resource": "route/POST /orders",
+      "attributes": {
+        "message": "Failure propagated through the transaction path",
+        "dependency": "postgres-primary",
+        "status_code": 504,
+        "retry_count": 1
+      }
+    },
+    {
+      "event_id": "mega-d-payments-api",
+      "occurred_at": "2026-11-22T10:05:18.000Z",
+      "received_at": "2026-11-22T10:05:19.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "payments-api",
+      "source": "node_sdk",
+      "event_type": "dependency_timeout",
+      "severity": "critical",
+      "version": "9.1.2",
+      "trace_id": "trace-mega-d",
+      "resource": "service/orders-api",
+      "attributes": {
+        "message": "Failure propagated through the transaction path",
+        "dependency": "orders-api",
+        "status_code": 504,
+        "retry_count": 1
+      }
+    },
+    {
+      "event_id": "mega-d-checkout-api",
+      "occurred_at": "2026-11-22T10:05:20.000Z",
+      "received_at": "2026-11-22T10:05:21.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "checkout-api",
+      "source": "node_sdk",
+      "event_type": "checkout_failed",
+      "severity": "critical",
+      "version": "4.8.0",
+      "trace_id": "trace-mega-d",
+      "resource": "route/POST /checkout",
+      "attributes": {
+        "message": "Failure propagated through the transaction path",
+        "dependency": "payments-api",
+        "route": "POST /checkout",
+        "status_code": 504,
+        "retry_count": 1
+      }
+    },
+    {
+      "event_id": "mega-d-edge-api",
+      "occurred_at": "2026-11-22T10:05:22.000Z",
+      "received_at": "2026-11-22T10:05:23.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "edge-api",
+      "source": "node_sdk",
+      "event_type": "dependency_timeout",
+      "severity": "critical",
+      "version": "8.2.0",
+      "trace_id": "trace-mega-d",
+      "resource": "route/POST /api/checkout",
+      "attributes": {
+        "message": "Failure propagated through the transaction path",
+        "dependency": "checkout-api",
+        "route": "POST /api/checkout",
+        "status_code": 502,
+        "retry_count": 1
+      }
+    },
+    {
+      "event_id": "mega-e-postgres-primary",
+      "occurred_at": "2026-11-22T10:06:02.000Z",
+      "received_at": "2026-11-22T10:06:03.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "postgres-primary",
+      "source": "node_sdk",
+      "event_type": "database_timeout",
+      "severity": "critical",
+      "version": "15.6-config-42",
+      "trace_id": "trace-mega-e",
+      "resource": "database/postgres-primary",
+      "attributes": {
+        "message": "Failure propagated through the transaction path",
+        "status_code": 504,
+        "retry_count": 1
+      }
+    },
+    {
+      "event_id": "mega-e-orders-api",
+      "occurred_at": "2026-11-22T10:06:04.000Z",
+      "received_at": "2026-11-22T10:06:05.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "orders-api",
+      "source": "node_sdk",
+      "event_type": "database_timeout",
+      "severity": "critical",
+      "version": "6.4.0",
+      "trace_id": "trace-mega-e",
+      "resource": "route/POST /orders",
+      "attributes": {
+        "message": "Failure propagated through the transaction path",
+        "dependency": "postgres-primary",
+        "status_code": 504,
+        "retry_count": 1
+      }
+    },
+    {
+      "event_id": "mega-e-payments-api",
+      "occurred_at": "2026-11-22T10:06:06.000Z",
+      "received_at": "2026-11-22T10:06:07.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "payments-api",
+      "source": "node_sdk",
+      "event_type": "dependency_timeout",
+      "severity": "critical",
+      "version": "9.1.2",
+      "trace_id": "trace-mega-e",
+      "resource": "service/orders-api",
+      "attributes": {
+        "message": "Failure propagated through the transaction path",
+        "dependency": "orders-api",
+        "status_code": 504,
+        "retry_count": 1
+      }
+    },
+    {
+      "event_id": "mega-e-checkout-api",
+      "occurred_at": "2026-11-22T10:06:08.000Z",
+      "received_at": "2026-11-22T10:06:09.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "checkout-api",
+      "source": "node_sdk",
+      "event_type": "checkout_failed",
+      "severity": "critical",
+      "version": "4.8.0",
+      "trace_id": "trace-mega-e",
+      "resource": "route/POST /checkout",
+      "attributes": {
+        "message": "Failure propagated through the transaction path",
+        "dependency": "payments-api",
+        "route": "POST /checkout",
+        "status_code": 504,
+        "retry_count": 1
+      }
+    },
+    {
+      "event_id": "mega-e-edge-api",
+      "occurred_at": "2026-11-22T10:06:10.000Z",
+      "received_at": "2026-11-22T10:06:11.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "edge-api",
+      "source": "node_sdk",
+      "event_type": "dependency_timeout",
+      "severity": "critical",
+      "version": "8.2.0",
+      "trace_id": "trace-mega-e",
+      "resource": "route/POST /api/checkout",
+      "attributes": {
+        "message": "Failure propagated through the transaction path",
+        "dependency": "checkout-api",
+        "route": "POST /api/checkout",
+        "status_code": 502,
+        "retry_count": 2
+      }
+    },
+    {
+      "event_id": "mega-inventory-1-postgres-primary",
+      "occurred_at": "2026-11-22T10:03:15.000Z",
+      "received_at": "2026-11-22T10:03:16.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "postgres-primary",
+      "source": "node_sdk",
+      "event_type": "database_timeout",
+      "severity": "error",
+      "version": "15.6-config-42",
+      "trace_id": "trace-mega-inventory-1",
+      "resource": "database/postgres-primary",
+      "attributes": {
+        "message": "Reservation read blocked by exhausted database connections",
+        "status_code": 504,
+        "retry_count": 0
+      }
+    },
+    {
+      "event_id": "mega-inventory-1-inventory-api",
+      "occurred_at": "2026-11-22T10:03:17.000Z",
+      "received_at": "2026-11-22T10:03:18.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "inventory-api",
+      "source": "node_sdk",
+      "event_type": "dependency_timeout",
+      "severity": "error",
+      "version": "7.3.0",
+      "trace_id": "trace-mega-inventory-1",
+      "resource": "route/POST /reservations",
+      "attributes": {
+        "message": "Inventory reservation lookup timed out",
+        "dependency": "postgres-primary",
+        "status_code": 504,
+        "retry_count": 0
+      }
+    },
+    {
+      "event_id": "mega-inventory-1-checkout-api",
+      "occurred_at": "2026-11-22T10:03:19.000Z",
+      "received_at": "2026-11-22T10:03:20.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "checkout-api",
+      "source": "node_sdk",
+      "event_type": "checkout_failed",
+      "severity": "error",
+      "version": "4.8.0",
+      "trace_id": "trace-mega-inventory-1",
+      "resource": "route/POST /checkout",
+      "attributes": {
+        "message": "Checkout could not reserve stock",
+        "dependency": "inventory-api",
+        "route": "POST /checkout",
+        "status_code": 504,
+        "retry_count": 0
+      }
+    },
+    {
+      "event_id": "mega-inventory-2-postgres-primary",
+      "occurred_at": "2026-11-22T10:04:27.000Z",
+      "received_at": "2026-11-22T10:04:28.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "postgres-primary",
+      "source": "node_sdk",
+      "event_type": "database_timeout",
+      "severity": "error",
+      "version": "15.6-config-42",
+      "trace_id": "trace-mega-inventory-2",
+      "resource": "database/postgres-primary",
+      "attributes": {
+        "message": "Reservation read blocked by exhausted database connections",
+        "status_code": 504,
+        "retry_count": 0
+      }
+    },
+    {
+      "event_id": "mega-inventory-2-inventory-api",
+      "occurred_at": "2026-11-22T10:04:29.000Z",
+      "received_at": "2026-11-22T10:04:30.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "inventory-api",
+      "source": "node_sdk",
+      "event_type": "dependency_timeout",
+      "severity": "error",
+      "version": "7.3.0",
+      "trace_id": "trace-mega-inventory-2",
+      "resource": "route/POST /reservations",
+      "attributes": {
+        "message": "Inventory reservation lookup timed out",
+        "dependency": "postgres-primary",
+        "status_code": 504,
+        "retry_count": 0
+      }
+    },
+    {
+      "event_id": "mega-inventory-2-checkout-api",
+      "occurred_at": "2026-11-22T10:04:31.000Z",
+      "received_at": "2026-11-22T10:04:32.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "checkout-api",
+      "source": "node_sdk",
+      "event_type": "checkout_failed",
+      "severity": "error",
+      "version": "4.8.0",
+      "trace_id": "trace-mega-inventory-2",
+      "resource": "route/POST /checkout",
+      "attributes": {
+        "message": "Checkout could not reserve stock",
+        "dependency": "inventory-api",
+        "route": "POST /checkout",
+        "status_code": 504,
+        "retry_count": 1
+      }
+    },
+    {
+      "event_id": "mega-inventory-3-postgres-primary",
+      "occurred_at": "2026-11-22T10:05:39.000Z",
+      "received_at": "2026-11-22T10:05:40.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "postgres-primary",
+      "source": "node_sdk",
+      "event_type": "database_timeout",
+      "severity": "critical",
+      "version": "15.6-config-42",
+      "trace_id": "trace-mega-inventory-3",
+      "resource": "database/postgres-primary",
+      "attributes": {
+        "message": "Reservation read blocked by exhausted database connections",
+        "status_code": 504,
+        "retry_count": 1
+      }
+    },
+    {
+      "event_id": "mega-inventory-3-inventory-api",
+      "occurred_at": "2026-11-22T10:05:41.000Z",
+      "received_at": "2026-11-22T10:05:42.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "inventory-api",
+      "source": "node_sdk",
+      "event_type": "dependency_timeout",
+      "severity": "critical",
+      "version": "7.3.0",
+      "trace_id": "trace-mega-inventory-3",
+      "resource": "route/POST /reservations",
+      "attributes": {
+        "message": "Inventory reservation lookup timed out",
+        "dependency": "postgres-primary",
+        "status_code": 504,
+        "retry_count": 1
+      }
+    },
+    {
+      "event_id": "mega-inventory-3-checkout-api",
+      "occurred_at": "2026-11-22T10:05:43.000Z",
+      "received_at": "2026-11-22T10:05:44.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "checkout-api",
+      "source": "node_sdk",
+      "event_type": "checkout_failed",
+      "severity": "critical",
+      "version": "4.8.0",
+      "trace_id": "trace-mega-inventory-3",
+      "resource": "route/POST /checkout",
+      "attributes": {
+        "message": "Checkout could not reserve stock",
+        "dependency": "inventory-api",
+        "route": "POST /checkout",
+        "status_code": 504,
+        "retry_count": 1
+      }
+    },
+    {
+      "event_id": "mega-orders-error-alert",
+      "occurred_at": "2026-11-22T10:03:25.000Z",
+      "received_at": "2026-11-22T10:03:26.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "orders-api",
+      "source": "alertmanager",
+      "event_type": "alert_firing",
+      "severity": "critical",
+      "attributes": {
+        "alertname": "OrdersWriteErrorsHigh",
+        "current_value": "18.4%",
+        "threshold": "3%",
+        "window": "5m"
+      }
+    },
+    {
+      "event_id": "mega-payments-latency-alert",
+      "occurred_at": "2026-11-22T10:03:34.000Z",
+      "received_at": "2026-11-22T10:03:35.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "payments-api",
+      "source": "alertmanager",
+      "event_type": "alert_firing",
+      "severity": "critical",
+      "attributes": {
+        "alertname": "PaymentsP95LatencyHigh",
+        "current_value": "18.4%",
+        "threshold": "3%",
+        "window": "5m"
+      }
+    },
+    {
+      "event_id": "mega-checkout-error-alert",
+      "occurred_at": "2026-11-22T10:03:43.000Z",
+      "received_at": "2026-11-22T10:03:44.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "checkout-api",
+      "source": "alertmanager",
+      "event_type": "alert_firing",
+      "severity": "critical",
+      "attributes": {
+        "alertname": "CheckoutErrorRateHigh",
+        "current_value": "18.4%",
+        "threshold": "3%",
+        "window": "5m"
+      }
+    },
+    {
+      "event_id": "mega-edge-error-alert",
+      "occurred_at": "2026-11-22T10:03:52.000Z",
+      "received_at": "2026-11-22T10:03:53.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "edge-api",
+      "source": "alertmanager",
+      "event_type": "alert_firing",
+      "severity": "critical",
+      "attributes": {
+        "alertname": "EdgeUpstreamErrorsHigh",
+        "current_value": "18.4%",
+        "threshold": "3%",
+        "window": "5m"
+      }
+    },
+    {
+      "event_id": "mega-inventory-error-alert",
+      "occurred_at": "2026-11-22T10:04:01.000Z",
+      "received_at": "2026-11-22T10:04:02.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "inventory-api",
+      "source": "alertmanager",
+      "event_type": "alert_firing",
+      "severity": "critical",
+      "attributes": {
+        "alertname": "InventoryReservationErrorsHigh",
+        "current_value": "18.4%",
+        "threshold": "3%",
+        "window": "5m"
+      }
+    },
+    {
+      "event_id": "mega-checkout-cpu",
+      "occurred_at": "2026-11-22T10:04:10.000Z",
+      "received_at": "2026-11-22T10:04:11.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "checkout-api",
+      "source": "alertmanager",
+      "event_type": "alert_firing",
+      "severity": "warning",
+      "resource": "deployment/checkout-api",
+      "attributes": {
+        "alertname": "CheckoutCPUThrottling",
+        "current_value": "41%",
+        "threshold": "20%",
+        "note": "retry amplification"
+      }
+    },
+    {
+      "event_id": "mega-checkout-restart",
+      "occurred_at": "2026-11-22T10:04:20.000Z",
+      "received_at": "2026-11-22T10:04:21.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "checkout-api",
+      "source": "kubernetes",
+      "event_type": "pod_restart",
+      "severity": "warning",
+      "version": "4.8.0",
+      "resource": "pod/checkout-api-7bc9d-2lr8p",
+      "attributes": {
+        "reason": "Liveness probe failed during retry backlog",
+        "restart_count": 1
+      }
+    },
+    {
+      "event_id": "mega-inventory-oom",
+      "occurred_at": "2026-11-22T10:04:30.000Z",
+      "received_at": "2026-11-22T10:04:31.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "inventory-api",
+      "source": "kubernetes",
+      "event_type": "oom_killed",
+      "severity": "critical",
+      "version": "7.3.0",
+      "resource": "pod/inventory-api-5f7c8-9z2qp",
+      "attributes": {
+        "reason": "Reservation cache expanded during retries",
+        "memory_limit": "768Mi"
+      }
+    },
+    {
+      "event_id": "mega-checkout-crashloop",
+      "occurred_at": "2026-11-22T10:04:40.000Z",
+      "received_at": "2026-11-22T10:04:41.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "checkout-api",
+      "source": "kubernetes",
+      "event_type": "crash_loop_back_off",
+      "severity": "critical",
+      "version": "4.8.0",
+      "resource": "pod/checkout-api-7bc9d-2lr8p",
+      "attributes": {
+        "reason": "Back-off restarting after probe failures",
+        "restart_count": 4
+      }
+    },
+    {
+      "event_id": "mega-provider-healthy",
+      "occurred_at": "2026-11-22T10:04:50.000Z",
+      "received_at": "2026-11-22T10:04:51.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "payments-api",
+      "source": "node_sdk",
+      "event_type": "dependency_health",
+      "severity": "info",
+      "resource": "provider/bank-gateway",
+      "attributes": {
+        "dependency": "bank-gateway",
+        "status": "healthy",
+        "error_rate": "0.1%"
+      }
+    },
+    {
+      "event_id": "mega-fraud-release",
+      "occurred_at": "2026-11-22T10:03:00.000Z",
+      "received_at": "2026-11-22T10:03:01.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "fraud-api",
+      "source": "github_actions",
+      "event_type": "deployment",
+      "severity": "info",
+      "version": "2.2.0",
+      "resource": "deployment/fraud-api",
+      "attributes": {
+        "state": "success",
+        "ref": "main",
+        "commit_sha": "megafraudrelease000000000000000000000000",
+        "change": "model feature refresh"
+      }
+    },
+    {
+      "event_id": "mega-fraud-error",
+      "occurred_at": "2026-11-22T10:05:10.000Z",
+      "received_at": "2026-11-22T10:05:11.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "fraud-api",
+      "source": "node_sdk",
+      "event_type": "model_timeout",
+      "severity": "error",
+      "version": "2.2.0",
+      "trace_id": "trace-unrelated-fraud",
+      "resource": "job/offline-retraining",
+      "attributes": {
+        "message": "Risk model timed out for an unrelated batch job",
+        "job": "offline-retraining",
+        "status_code": 500
+      }
+    },
+    {
+      "event_id": "mega-notifications-warning",
+      "occurred_at": "2026-11-22T10:05:20.000Z",
+      "received_at": "2026-11-22T10:05:21.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "notifications-api",
+      "source": "alertmanager",
+      "event_type": "alert_firing",
+      "severity": "warning",
+      "resource": "queue/email",
+      "attributes": {
+        "alertname": "EmailQueueDepthHigh",
+        "current_value": "4200",
+        "threshold": "3000"
+      }
+    },
+    {
+      "event_id": "mega-checkout-rollback",
+      "occurred_at": "2026-11-22T10:07:05.000Z",
+      "received_at": "2026-11-22T10:07:06.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "checkout-api",
+      "source": "github_actions",
+      "event_type": "deployment",
+      "severity": "info",
+      "version": "4.7.4",
+      "resource": "deployment/checkout-api",
+      "attributes": {
+        "state": "success",
+        "ref": "main",
+        "commit_sha": "megacheckoutrollback00000000000000000000",
+        "change": "rollback checkout release"
+      }
+    },
+    {
+      "event_id": "mega-checkout-rollback-ready",
+      "occurred_at": "2026-11-22T10:07:30.000Z",
+      "received_at": "2026-11-22T10:07:31.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "checkout-api",
+      "source": "kubernetes",
+      "event_type": "deployment_recovered",
+      "severity": "info",
+      "version": "4.7.4",
+      "resource": "deployment/checkout-api",
+      "attributes": {
+        "ready_replicas": 12,
+        "desired_replicas": 12
+      }
+    },
+    {
+      "event_id": "mega-after-checkout-rollback-postgres-primary",
+      "occurred_at": "2026-11-22T10:07:40.000Z",
+      "received_at": "2026-11-22T10:07:41.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "postgres-primary",
+      "source": "node_sdk",
+      "event_type": "database_timeout",
+      "severity": "critical",
+      "version": "15.6-config-42",
+      "trace_id": "trace-mega-after-checkout-rollback",
+      "resource": "database/postgres-primary",
+      "attributes": {
+        "message": "Failure persisted after checkout rollback",
+        "status_code": 504,
+        "retry_count": 2
+      }
+    },
+    {
+      "event_id": "mega-after-checkout-rollback-orders-api",
+      "occurred_at": "2026-11-22T10:07:42.000Z",
+      "received_at": "2026-11-22T10:07:43.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "orders-api",
+      "source": "node_sdk",
+      "event_type": "database_timeout",
+      "severity": "critical",
+      "version": "6.4.0",
+      "trace_id": "trace-mega-after-checkout-rollback",
+      "resource": "route/POST /orders",
+      "attributes": {
+        "message": "Failure persisted after checkout rollback",
+        "dependency": "postgres-primary",
+        "status_code": 504,
+        "retry_count": 2
+      }
+    },
+    {
+      "event_id": "mega-after-checkout-rollback-payments-api",
+      "occurred_at": "2026-11-22T10:07:44.000Z",
+      "received_at": "2026-11-22T10:07:45.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "payments-api",
+      "source": "node_sdk",
+      "event_type": "dependency_timeout",
+      "severity": "critical",
+      "version": "9.1.2",
+      "trace_id": "trace-mega-after-checkout-rollback",
+      "resource": "service/orders-api",
+      "attributes": {
+        "message": "Failure persisted after checkout rollback",
+        "dependency": "orders-api",
+        "status_code": 504,
+        "retry_count": 2
+      }
+    },
+    {
+      "event_id": "mega-after-checkout-rollback-checkout-api",
+      "occurred_at": "2026-11-22T10:07:46.000Z",
+      "received_at": "2026-11-22T10:07:47.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "checkout-api",
+      "source": "node_sdk",
+      "event_type": "checkout_failed",
+      "severity": "critical",
+      "version": "4.7.4",
+      "trace_id": "trace-mega-after-checkout-rollback",
+      "resource": "route/POST /checkout",
+      "attributes": {
+        "message": "Failure persisted after checkout rollback",
+        "dependency": "payments-api",
+        "route": "POST /checkout",
+        "status_code": 504,
+        "retry_count": 2
+      }
+    },
+    {
+      "event_id": "mega-after-checkout-rollback-edge-api",
+      "occurred_at": "2026-11-22T10:07:48.000Z",
+      "received_at": "2026-11-22T10:07:49.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "edge-api",
+      "source": "node_sdk",
+      "event_type": "dependency_timeout",
+      "severity": "critical",
+      "version": "8.2.0",
+      "trace_id": "trace-mega-after-checkout-rollback",
+      "resource": "route/POST /api/checkout",
+      "attributes": {
+        "message": "Failure persisted after checkout rollback",
+        "dependency": "checkout-api",
+        "route": "POST /api/checkout",
+        "status_code": 502,
+        "retry_count": 2
+      }
+    },
+    {
+      "event_id": "mega-payments-rollback",
+      "occurred_at": "2026-11-22T10:08:10.000Z",
+      "received_at": "2026-11-22T10:08:11.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "payments-api",
+      "source": "github_actions",
+      "event_type": "deployment",
+      "severity": "info",
+      "version": "9.1.1",
+      "resource": "deployment/payments-api",
+      "attributes": {
+        "state": "success",
+        "ref": "main",
+        "commit_sha": "megapaymentsrollback00000000000000000000",
+        "change": "rollback payments although no payments deployment preceded the incident"
+      }
+    },
+    {
+      "event_id": "mega-after-payments-rollback-postgres-primary",
+      "occurred_at": "2026-11-22T10:08:35.000Z",
+      "received_at": "2026-11-22T10:08:36.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "postgres-primary",
+      "source": "node_sdk",
+      "event_type": "database_timeout",
+      "severity": "critical",
+      "version": "15.6-config-42",
+      "trace_id": "trace-mega-after-payments-rollback",
+      "resource": "database/postgres-primary",
+      "attributes": {
+        "message": "Failure persisted after payments rollback",
+        "status_code": 504,
+        "retry_count": 3
+      }
+    },
+    {
+      "event_id": "mega-after-payments-rollback-orders-api",
+      "occurred_at": "2026-11-22T10:08:37.000Z",
+      "received_at": "2026-11-22T10:08:38.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "orders-api",
+      "source": "node_sdk",
+      "event_type": "database_timeout",
+      "severity": "critical",
+      "version": "6.4.0",
+      "trace_id": "trace-mega-after-payments-rollback",
+      "resource": "route/POST /orders",
+      "attributes": {
+        "message": "Failure persisted after payments rollback",
+        "dependency": "postgres-primary",
+        "status_code": 504,
+        "retry_count": 3
+      }
+    },
+    {
+      "event_id": "mega-after-payments-rollback-payments-api",
+      "occurred_at": "2026-11-22T10:08:39.000Z",
+      "received_at": "2026-11-22T10:08:40.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "payments-api",
+      "source": "node_sdk",
+      "event_type": "dependency_timeout",
+      "severity": "critical",
+      "version": "9.1.1",
+      "trace_id": "trace-mega-after-payments-rollback",
+      "resource": "service/orders-api",
+      "attributes": {
+        "message": "Failure persisted after payments rollback",
+        "dependency": "orders-api",
+        "status_code": 504,
+        "retry_count": 3
+      }
+    },
+    {
+      "event_id": "mega-after-payments-rollback-checkout-api",
+      "occurred_at": "2026-11-22T10:08:41.000Z",
+      "received_at": "2026-11-22T10:08:42.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "checkout-api",
+      "source": "node_sdk",
+      "event_type": "checkout_failed",
+      "severity": "critical",
+      "version": "4.7.4",
+      "trace_id": "trace-mega-after-payments-rollback",
+      "resource": "route/POST /checkout",
+      "attributes": {
+        "message": "Failure persisted after payments rollback",
+        "dependency": "payments-api",
+        "route": "POST /checkout",
+        "status_code": 504,
+        "retry_count": 3
+      }
+    },
+    {
+      "event_id": "mega-after-payments-rollback-edge-api",
+      "occurred_at": "2026-11-22T10:08:43.000Z",
+      "received_at": "2026-11-22T10:08:44.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "edge-api",
+      "source": "node_sdk",
+      "event_type": "dependency_timeout",
+      "severity": "critical",
+      "version": "8.2.0",
+      "trace_id": "trace-mega-after-payments-rollback",
+      "resource": "route/POST /api/checkout",
+      "attributes": {
+        "message": "Failure persisted after payments rollback",
+        "dependency": "checkout-api",
+        "route": "POST /api/checkout",
+        "status_code": 502,
+        "retry_count": 3
+      }
+    },
+    {
+      "event_id": "mega-postgres-restore",
+      "occurred_at": "2026-11-22T10:09:10.000Z",
+      "received_at": "2026-11-22T10:09:11.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "postgres-primary",
+      "source": "github_actions",
+      "event_type": "deployment",
+      "severity": "info",
+      "version": "15.6-config-43",
+      "resource": "deployment/postgres-primary",
+      "attributes": {
+        "state": "success",
+        "ref": "main",
+        "commit_sha": "megapostgresrestore000000000000000000000",
+        "change": "restore max_connections 300 and statement_timeout 5s"
+      }
+    },
+    {
+      "event_id": "mega-postgres-recovered",
+      "occurred_at": "2026-11-22T10:09:35.000Z",
+      "received_at": "2026-11-22T10:09:36.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "postgres-primary",
+      "source": "node_sdk",
+      "event_type": "runtime_metric",
+      "severity": "info",
+      "version": "15.6-config-43",
+      "resource": "database/postgres-primary",
+      "attributes": {
+        "connections": 101,
+        "max_connections": 300,
+        "lock_waits": 0,
+        "queue_depth": 0,
+        "query_p95_ms": 42
+      }
+    },
+    {
+      "event_id": "mega-orders-recovered",
+      "occurred_at": "2026-11-22T10:09:45.000Z",
+      "received_at": "2026-11-22T10:09:46.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "orders-api",
+      "source": "node_sdk",
+      "event_type": "smoke_test",
+      "severity": "info",
+      "version": "6.4.0",
+      "trace_id": "trace-mega-recovery",
+      "resource": "route/POST /orders",
+      "attributes": {
+        "status": "passed",
+        "response_code": 200
+      }
+    },
+    {
+      "event_id": "mega-payments-recovered",
+      "occurred_at": "2026-11-22T10:09:48.000Z",
+      "received_at": "2026-11-22T10:09:49.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "payments-api",
+      "source": "node_sdk",
+      "event_type": "smoke_test",
+      "severity": "info",
+      "version": "9.1.1",
+      "trace_id": "trace-mega-recovery",
+      "resource": "route/POST /payments/authorize",
+      "attributes": {
+        "status": "passed",
+        "response_code": 200
+      }
+    },
+    {
+      "event_id": "mega-inventory-recovered",
+      "occurred_at": "2026-11-22T10:09:51.000Z",
+      "received_at": "2026-11-22T10:09:52.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "inventory-api",
+      "source": "node_sdk",
+      "event_type": "smoke_test",
+      "severity": "info",
+      "version": "7.3.0",
+      "trace_id": "trace-mega-recovery-inventory",
+      "resource": "route/POST /reservations",
+      "attributes": {
+        "status": "passed",
+        "response_code": 200
+      }
+    },
+    {
+      "event_id": "mega-checkout-recovered",
+      "occurred_at": "2026-11-22T10:09:54.000Z",
+      "received_at": "2026-11-22T10:09:55.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "checkout-api",
+      "source": "node_sdk",
+      "event_type": "smoke_test",
+      "severity": "info",
+      "version": "4.7.4",
+      "trace_id": "trace-mega-recovery",
+      "resource": "route/POST /checkout",
+      "attributes": {
+        "status": "passed",
+        "response_code": 200
+      }
+    },
+    {
+      "event_id": "mega-edge-recovered",
+      "occurred_at": "2026-11-22T10:09:57.000Z",
+      "received_at": "2026-11-22T10:09:58.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "edge-api",
+      "source": "node_sdk",
+      "event_type": "smoke_test",
+      "severity": "info",
+      "version": "8.2.0",
+      "trace_id": "trace-mega-recovery",
+      "resource": "route/POST /api/checkout",
+      "attributes": {
+        "status": "passed",
+        "response_code": 200
+      }
+    },
+    {
+      "event_id": "mega-orders-alert-resolved",
+      "occurred_at": "2026-11-22T10:10:20.000Z",
+      "received_at": "2026-11-22T10:10:21.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "orders-api",
+      "source": "alertmanager",
+      "event_type": "alert_resolved",
+      "severity": "info",
+      "attributes": {
+        "alertname": "OrdersWriteErrorsHigh",
+        "status": "resolved",
+        "window": "5m"
+      }
+    },
+    {
+      "event_id": "mega-payments-alert-resolved",
+      "occurred_at": "2026-11-22T10:10:25.000Z",
+      "received_at": "2026-11-22T10:10:26.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "payments-api",
+      "source": "alertmanager",
+      "event_type": "alert_resolved",
+      "severity": "info",
+      "attributes": {
+        "alertname": "PaymentsP95LatencyHigh",
+        "status": "resolved",
+        "window": "5m"
+      }
+    },
+    {
+      "event_id": "mega-checkout-alert-resolved",
+      "occurred_at": "2026-11-22T10:10:30.000Z",
+      "received_at": "2026-11-22T10:10:31.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "checkout-api",
+      "source": "alertmanager",
+      "event_type": "alert_resolved",
+      "severity": "info",
+      "attributes": {
+        "alertname": "CheckoutErrorRateHigh",
+        "status": "resolved",
+        "window": "5m"
+      }
+    },
+    {
+      "event_id": "mega-edge-alert-resolved",
+      "occurred_at": "2026-11-22T10:10:35.000Z",
+      "received_at": "2026-11-22T10:10:36.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "edge-api",
+      "source": "alertmanager",
+      "event_type": "alert_resolved",
+      "severity": "info",
+      "attributes": {
+        "alertname": "EdgeUpstreamErrorsHigh",
+        "status": "resolved",
+        "window": "5m"
+      }
+    },
+    {
+      "event_id": "mega-inventory-alert-resolved",
+      "occurred_at": "2026-11-22T10:10:40.000Z",
+      "received_at": "2026-11-22T10:10:41.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "inventory-api",
+      "source": "alertmanager",
+      "event_type": "alert_resolved",
+      "severity": "info",
+      "attributes": {
+        "alertname": "InventoryReservationErrorsHigh",
+        "status": "resolved",
+        "window": "5m"
+      }
+    },
+    {
+      "event_id": "mega-postgres-alert-resolved",
+      "occurred_at": "2026-11-22T10:10:45.000Z",
+      "received_at": "2026-11-22T10:10:46.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "postgres-primary",
+      "source": "alertmanager",
+      "event_type": "alert_resolved",
+      "severity": "info",
+      "attributes": {
+        "alertname": "PostgresConnectionsHigh",
+        "status": "resolved",
+        "window": "5m"
+      }
+    },
+    {
+      "event_id": "mega-platform-stable",
+      "occurred_at": "2026-11-22T10:11:00.000Z",
+      "received_at": "2026-11-22T10:11:01.000Z",
+      "tenant_id": "local",
+      "environment": "production",
+      "service": "edge-api",
+      "source": "node_sdk",
+      "event_type": "service_state",
+      "severity": "info",
+      "version": "8.2.0",
+      "attributes": {
+        "status": "stable",
+        "observation_window": "10m",
+        "error_rate": "0.3%",
+        "open_alerts": 0
+      }
+    }
+  ]
+}
