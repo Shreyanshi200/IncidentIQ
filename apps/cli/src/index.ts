@@ -71,9 +71,25 @@ async function readFixture(file: string): Promise<IncidentFixture> {
   return fixture as IncidentFixture;
 }
 
+async function ingestFixture(file: string): Promise<void> {
+  const fixture = await readFixture(file);
+  const apiKey = process.env.INCIDENTIQ_API_KEY?.trim();
+  if (!apiKey) throw new Error("INCIDENTIQ_API_KEY is required for fixture ingestion");
+  const selectedTenant = hasFlag("--tenant") ? tenantId(flag("--tenant")) : undefined;
+  const apiUrl = (process.env.INCIDENTIQ_API_URL ?? "http://localhost:3000").replace(/\/$/, "");
+  const response = await fetch(`${apiUrl}/v1/events/batch`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+    body: JSON.stringify({ events: fixture.events.map((event) => selectedTenant ? { ...event, event_id: `${selectedTenant}:${event.event_id}`, tenant_id: selectedTenant } : event) })
+  });
+  if (!response.ok) throw new Error(`Fixture ingestion failed (${response.status}): ${await response.text()}`);
+  const result = await response.json() as { accepted: number; duplicates: number };
+  console.log(`Ingested ${fixture.fixture_id}: ${result.accepted} accepted, ${result.duplicates} duplicate.`);
+}
+
 try {
   if (command === "version") {
-    console.log(`incidentiq 0.8.1 (schema ${SCHEMA_VERSION})`);
+    console.log(`incidentiq 0.8.2 (schema ${SCHEMA_VERSION})`);
   } else if (command === "api" && subcommand === "start") {
     const api = spawn(process.execPath, [fileURLToPath(new URL("../../../api/dist/src/main.js", import.meta.url))], { stdio: "inherit", env: process.env });
     await new Promise<void>((resolveStart, rejectStart) => api.once("exit", (code) => code === 0 ? resolveStart() : rejectStart(new Error(`API exited with code ${code}`))));
@@ -125,6 +141,8 @@ try {
       const loaded = await loadFixture(pool, fixture);
       console.log(`Loaded ${fixture.fixture_id}: ${loaded.inserted} inserted, ${loaded.duplicates} duplicate.`);
     });
+  } else if (command === "fixture" && subcommand === "ingest" && target) {
+    await ingestFixture(target);
   } else if (command === "correlate" && subcommand) {
     const result = correlate(await readFixture(subcommand));
     if (target === "--save") {
@@ -151,7 +169,7 @@ try {
       console.log(JSON.stringify(incident.investigation, null, 2));
     });
   } else {
-    throw new Error("Usage: incidentiq version | api start | api health | keys create --scope ingest|read [--tenant <tenant>] [--label <label>] [--expires-in-days <days>] | keys list [--tenant <tenant>] | keys revoke <key-id> [--tenant <tenant>] --confirm | init | data clear --tenant <tenant> --confirm | data prune --tenant <tenant> --older-than <90d|24h> [--confirm] | fixture validate <file> | fixture load <file> | correlate <fixture> [--save] | events list | incidents list [--tenant <tenant>] | incidents explain <id> | incidents export <id> --format json");
+    throw new Error("Usage: incidentiq version | api start | api health | keys create --scope ingest|read [--tenant <tenant>] [--label <label>] [--expires-in-days <days>] | keys list [--tenant <tenant>] | keys revoke <key-id> [--tenant <tenant>] --confirm | init | data clear --tenant <tenant> --confirm | data prune --tenant <tenant> --older-than <90d|24h> [--confirm] | fixture validate <file> | fixture load <file> | fixture ingest <file> [--tenant <tenant>] | correlate <fixture> [--save] | events list | incidents list [--tenant <tenant>] | incidents explain <id> | incidents export <id> --format json");
   }
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error));

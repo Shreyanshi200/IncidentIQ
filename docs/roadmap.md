@@ -1,20 +1,6 @@
 # Release roadmap
 
-IncidentIQ is currently a single-operator, self-hosted incident intelligence platform. Version 0.8.1 is the latest completed product release. Completed changes are listed in the [changelog](../CHANGELOG.md).
-
-## In development
-
-| Version | Outcome |
-| --- | --- |
-| 0.8.2 | Cross-service evidence correlation: dependency-aware linking, unified multi-service investigations, propagation timelines, and explainable merge safeguards |
-
-### v0.8.2 scope
-
-- Link evidence across services in the same tenant and environment through shared traces and explicit dependency signals.
-- Preserve service-local incidents while presenting one unified investigation and ordered propagation timeline.
-- Explain why services were linked and avoid merging unrelated failures that merely overlap in time.
-- Add affected-service and dependency-path views to the dashboard and incident report.
-- Give deterministic correlation and optional AI review the same tenant-scoped multi-service evidence set.
+IncidentIQ is currently a single-operator, self-hosted incident intelligence platform. Version 0.8.2 is the latest completed product release. Completed changes are listed in the [changelog](../CHANGELOG.md).
 
 ## Planned releases
 

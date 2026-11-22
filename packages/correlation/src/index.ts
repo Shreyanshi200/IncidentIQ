@@ -25,6 +25,14 @@ export interface CorrelationResult {
   next_checks: string[];
 }
 
+export interface CrossServiceLink {
+  from_service: string;
+  to_service: string;
+  reason: "shared_trace" | "declared_dependency";
+  evidence_ids: string[];
+  trace_id?: string;
+}
+
 const EVENT_WINDOW_MS = 10 * 60 * 1000;
 const MAX_REPEATED_FACTOR_OCCURRENCES = 3;
 
@@ -52,6 +60,60 @@ function isApplicationError(event: NormalizedEvent): boolean {
 function stringAttribute(event: NormalizedEvent, name: string): string | undefined {
   const value = event.attributes[name];
   return typeof value === "string" ? value : undefined;
+}
+
+function isFailure(event: NormalizedEvent): boolean {
+  return event.severity === "error" || event.severity === "critical";
+}
+
+export function crossServiceLinks(events: NormalizedEvent[], eventWindowMs = EVENT_WINDOW_MS): CrossServiceLink[] {
+  if (!Number.isFinite(eventWindowMs) || eventWindowMs <= 0) throw new Error("eventWindowMs must be a positive number");
+  const timeline = sortTimeline(events);
+  const links = new Map<string, CrossServiceLink>();
+  const add = (link: CrossServiceLink): void => {
+    if (link.from_service === link.to_service) return;
+    const key = [link.reason, link.from_service, link.to_service, link.trace_id ?? ""].join("\u0000");
+    const existing = links.get(key);
+    if (existing) existing.evidence_ids = [...new Set([...existing.evidence_ids, ...link.evidence_ids])].sort();
+    else links.set(key, { ...link, evidence_ids: [...new Set(link.evidence_ids)].sort() });
+  };
+
+  const byTrace = new Map<string, { traceId: string; events: NormalizedEvent[] }>();
+  for (const event of timeline) if (event.trace_id) {
+    const key = [event.tenant_id, event.environment, event.trace_id].join("\u0000");
+    const group = byTrace.get(key) ?? { traceId: event.trace_id, events: [] };
+    group.events.push(event);
+    byTrace.set(key, group);
+  }
+  for (const { traceId, events: traceEvents } of byTrace.values()) {
+    const byService = new Map<string, NormalizedEvent[]>();
+    for (const event of traceEvents) byService.set(event.service, [...(byService.get(event.service) ?? []), event]);
+    const failures = [...byService.values()].flatMap((serviceEvents) => serviceEvents.find(isFailure) ?? []).sort((left, right) => timestamp(left) - timestamp(right) || left.service.localeCompare(right.service));
+    for (let index = 1; index < failures.length; index += 1) {
+      const from = failures[index - 1]!;
+      const to = failures[index]!;
+      if (timestamp(to) - timestamp(from) > eventWindowMs) continue;
+      add({ from_service: from.service, to_service: to.service, reason: "shared_trace", evidence_ids: [from.event_id, to.event_id], trace_id: traceId });
+    }
+  }
+
+  for (const caller of timeline.filter(isFailure)) {
+    const dependency = stringAttribute(caller, "dependency");
+    if (!dependency || dependency === caller.service) continue;
+    const candidates = timeline.filter((candidate) => candidate.tenant_id === caller.tenant_id && candidate.environment === caller.environment && candidate.service === dependency && isFailure(candidate) && timestamp(candidate) <= timestamp(caller) && timestamp(caller) - timestamp(candidate) <= eventWindowMs);
+    const dependencyFailure = (caller.trace_id ? candidates.find((candidate) => candidate.trace_id === caller.trace_id) : undefined) ?? candidates.at(-1);
+    if (dependencyFailure) {
+      add({
+        from_service: dependencyFailure.service,
+        to_service: caller.service,
+        reason: "declared_dependency",
+        evidence_ids: [dependencyFailure.event_id, caller.event_id],
+        ...(caller.trace_id && caller.trace_id === dependencyFailure.trace_id ? { trace_id: caller.trace_id } : {})
+      });
+    }
+  }
+
+  return [...links.values()].sort((left, right) => left.from_service.localeCompare(right.from_service) || left.to_service.localeCompare(right.to_service) || left.reason.localeCompare(right.reason));
 }
 
 function aggregateFactors(factors: ScoreFactor[]): ScoreFactor[] {

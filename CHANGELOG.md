@@ -2,6 +2,15 @@
 
 Notable IncidentIQ changes are recorded here. Planned work belongs in the [release roadmap](docs/roadmap.md), not in the completed release history.
 
+## 0.8.2 - Cross-service evidence correlation
+
+- Linked service-local incidents only through shared traces or recorded dependency failures within the same tenant, environment, and evidence window.
+- Added unified multi-service investigations, compact propagation paths, and expandable relationship citations without merging stored incidents.
+- Added tenant-safe fixture ingestion through the authenticated API and an 86-event commerce cascade for rigorous validation.
+- Grounded AI citations in the exact incident event-ID set and invalidated cached explanations when linked evidence changes.
+- Redesigned PDF reports around a concise executive summary, service propagation, optional AI review, validation plan, and one chronological timeline.
+- Updated npm release automation to skip publishing when public package contents have not changed.
+
 ## 0.8.1 - Operational hardening
 
 - Added labelled, tenant-selectable API keys with optional expiry, metadata listing, and confirmed revocation.

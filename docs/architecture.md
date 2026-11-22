@@ -46,7 +46,7 @@ flowchart LR
 6. The deterministic correlation package ranks candidate causes from recorded timing, entity, version, route, dependency, and resource evidence. Repeated factors are aggregated and their score contribution is capped after three occurrences, while every linked event remains traceable. Scores prioritize investigation; they are not probabilities.
 7. An operator uses a read key once to create a tenant-scoped dashboard session. The dashboard loads the overview, incident list, detail, timeline, and PDF report through the API.
 8. When explicitly requested and configured, the API sends only that incident's redacted stored evidence to OpenAI. It accepts a structured response only when every claim and check cites event IDs from the incident, then caches the result until new evidence replaces the investigation.
-9. The CLI is an operator tool for migrations, key creation, evidence inspection, fixtures, and saved-incident workflows. It connects directly to PostgreSQL in the current single-operator architecture.
+9. The CLI is an operator tool for migrations, key creation, evidence inspection, fixtures, and saved-incident workflows. Database operations connect directly to PostgreSQL; `fixture ingest` deliberately uses the authenticated API to exercise the production ingestion path.
 
 ## Component responsibilities
 
@@ -104,7 +104,7 @@ IncidentIQ supplies the API and collector images, npm SDK, GitHub Action, databa
 - One API process and PostgreSQL are the supported production shape.
 - Session and AI rate limits are process-local and reset when that API process restarts.
 - The dashboard is single-operator and has no acknowledgement, assignment, or resolution workflow.
-- Automatic grouping is limited to one tenant, service, and environment; dependency-aware cross-service correlation is planned for v0.8.2.
+- Automatic incident records remain local to one tenant, service, and environment. The investigation layer builds a tenant-scoped cross-service view only from shared traces or declared dependency failures within the configured evidence window; unrelated simultaneous failures remain separate.
 - Kubernetes collection is namespace-scoped and keeps watch checkpoints in memory.
 - Correlation remains evidence-bounded and deterministic. Optional AI output is a cited second opinion and never changes stored scores or grouping.
 

@@ -50,6 +50,19 @@ interface DashboardIncidentDetail extends DashboardIncident {
   next_checks: string[];
   ai_available: boolean;
   ai_explanation?: AiExplanation;
+  cross_service?: {
+    related_incident_ids: string[];
+    services: Array<{ service: string; event_count: number; role: "primary" | "linked" }>;
+    links: Array<{ from_service: string; to_service: string; reason: "shared_trace" | "declared_dependency"; evidence_ids: string[]; trace_id?: string }>;
+  };
+}
+
+interface GroupedCrossServiceLink {
+  from_service: string;
+  to_service: string;
+  evidence_ids: string[];
+  trace_count: number;
+  dependency_count: number;
 }
 
 interface AiExplanation {
@@ -94,6 +107,10 @@ function newestFirst<T extends { last_event_at: string }>(items: T[]): T[] {
 
 function humanize(value: string): string {
   return value.replaceAll("_", " ");
+}
+
+function traceLabel(value: string): string {
+  return value.toLowerCase().startsWith("trace-") ? value : `trace ${value}`;
 }
 
 function factorLabel(value: string): string {
@@ -520,7 +537,7 @@ function App() {
         <button className={view === "overview" ? "active" : ""} onClick={() => navigate("overview")}>Overview</button>
         <button className={view === "investigations" || view === "detail" ? "active" : ""} onClick={() => navigate("investigations")}>Investigations</button>
       </nav>
-      <div className="sidebar-footer"><span>API target</span><code>{apiBaseUrl || "localhost:3000"}</code><small>v0.8.1</small></div>
+      <div className="sidebar-footer"><span>API target</span><code>{apiBaseUrl || "localhost:3000"}</code><small>v0.8.2</small></div>
     </aside>
 
     <main className="content">
@@ -623,35 +640,77 @@ function IncidentDetail({ incident, tab, reportLoading, aiLoading, onBack, onTab
     <div className="detail-heading">
       <div><span className="eyebrow">INCIDENT INVESTIGATION</span><h2>{incident.service} · {incident.environment}</h2><p><strong>{humanize(incident.leading_cause)}</strong> · {incident.confidence} confidence · {incident.state} incident</p></div>
     </div>
-    <section className="detail-summary" aria-label="Incident summary"><Metric label="Opened" value={<RelativeAge value={incident.started_at} />} detail={formatDate(incident.started_at)} /><Metric label="Latest evidence" value={<RelativeAge value={incident.last_event_at} />} detail={formatDate(incident.last_event_at)} /><Metric label="Linked evidence" value={incident.event_count} detail={sources.map(sourceLabel).join(", ") || "no sources"} /><Metric label="Status" value={incident.state} detail="automatic incident" /></section>
+    <section className="detail-summary" aria-label="Incident summary"><Metric label="Opened" value={<RelativeAge value={incident.started_at} />} detail={formatDate(incident.started_at)} /><Metric label="Latest evidence" value={<RelativeAge value={incident.last_event_at} />} detail={formatDate(incident.last_event_at)} /><Metric label="Linked evidence" value={incident.event_count} detail={sources.map(sourceLabel).join(", ") || "no sources"} /><Metric label={incident.cross_service ? "Affected services" : "Status"} value={incident.cross_service ? incident.cross_service.services.length : incident.state} detail={incident.cross_service ? "evidence-backed links" : "automatic incident"} /></section>
     <div className="incident-tabs" id="incident-tabs" role="tablist" aria-label="Incident investigation sections" onKeyDown={handleTabKey}>
       <button id="incident-tab-analysis" role="tab" aria-selected={tab === "analysis"} aria-controls="incident-panel-analysis" tabIndex={tab === "analysis" ? 0 : -1} className={tab === "analysis" ? "active" : ""} onClick={() => onTabChange("analysis")}>Analysis</button>
       <button id="incident-tab-evidence" role="tab" aria-selected={tab === "evidence"} aria-controls="incident-panel-evidence" tabIndex={tab === "evidence" ? 0 : -1} className={tab === "evidence" ? "active" : ""} onClick={() => onTabChange("evidence")}>Evidence <span>{incident.event_count}</span></button>
       <button id="incident-tab-ai" role="tab" aria-selected={tab === "ai"} aria-controls="incident-panel-ai" tabIndex={tab === "ai" ? 0 : -1} className={tab === "ai" ? "active" : ""} onClick={() => onTabChange("ai")}>AI Review{incident.ai_explanation && <i aria-hidden="true" title="Generated" />}</button>
     </div>
     {tab === "analysis" && <div className="incident-tab-panel" id="incident-panel-analysis" role="tabpanel" aria-labelledby="incident-tab-analysis">
+      {incident.cross_service && <CrossServiceEvidence context={incident.cross_service} timeline={incident.timeline} onEvidence={openEvidence} />}
       <InvestigationBrief incident={incident} terms={terms} onEvidence={openEvidence} />
       <section className="next-checks"><div><span className="eyebrow">VALIDATION PLAN</span><h2>Recommended next checks</h2><p>Run these in order before taking remediation action. They are evidence-based checks, not automated commands.</p></div>{incident.next_checks.length > 0 ? <ol>{incident.next_checks.map((check) => <li key={check}><HighlightedText text={check} terms={terms} /></li>)}</ol> : <p>Compare the evidence timeline with service logs and deployment state before taking action.</p>}</section>
     </div>}
     {tab === "evidence" && <div className="incident-tab-panel" id="incident-panel-evidence" role="tabpanel" aria-labelledby="incident-tab-evidence">
       <section className="timeline-section">
         <div><span className="eyebrow">ORDERED EVIDENCE</span><div className="heading-with-help"><h2>What IncidentIQ recorded</h2><DotLegend kind="evidence" /></div><p>Plain-language summaries are derived from stored fields. Expand an item to verify the untouched raw attributes.</p></div>
-        <ol className="timeline">{incident.timeline.map((event) => <li key={event.event_id} id={`evidence-${event.event_id}`}><span className={`timeline-marker ${event.severity}`} /><article><div className="timeline-title"><strong>{humanize(event.event_type)}</strong><time title={formatDate(event.occurred_at)}>{formatDate(event.occurred_at)}</time></div><p className="event-explanation"><HighlightedText text={describeEvent(event)} terms={terms} /></p><p className="event-meta"><span className="source-chip">{sourceLabel(event.source)}</span>{event.version && <span className="event-context">v{event.version}</span>}{event.trace_id && <span className="event-context">trace {event.trace_id}</span>}</p>{Object.keys(event.attributes).length > 0 && <details><summary>View raw evidence attributes</summary><pre>{JSON.stringify(event.attributes, null, 2)}</pre></details>}</article></li>)}</ol>
+        <ol className="timeline">{incident.timeline.map((event) => <li key={event.event_id} id={`evidence-${event.event_id}`}><span className={`timeline-marker ${event.severity}`} /><article><div className="timeline-title"><strong>{humanize(event.event_type)}</strong><time title={formatDate(event.occurred_at)}>{formatDate(event.occurred_at)}</time></div><p className="event-explanation"><HighlightedText text={describeEvent(event)} terms={terms} /></p><p className="event-meta"><span className="source-chip">{sourceLabel(event.source)}</span>{event.version && <span className="event-context">v{event.version}</span>}{event.trace_id && <span className="event-context">{traceLabel(event.trace_id)}</span>}</p>{Object.keys(event.attributes).length > 0 && <details><summary>View raw evidence attributes</summary><pre>{JSON.stringify(event.attributes, null, 2)}</pre></details>}</article></li>)}</ol>
       </section>
     </div>}
     {tab === "ai" && <div className="incident-tab-panel" id="incident-panel-ai" role="tabpanel" aria-labelledby="incident-tab-ai"><AiExplanationPanel incident={incident} terms={terms} loading={aiLoading} onGenerate={onGenerateAi} onEvidence={openEvidence} /></div>}
   </section>;
 }
 
-function EvidenceLinks({ eventIds, incident, onEvidence }: { eventIds: string[]; incident: DashboardIncidentDetail; onEvidence: (eventId: string) => void }) {
+function CrossServiceEvidence({ context, timeline, onEvidence }: { context: NonNullable<DashboardIncidentDetail["cross_service"]>; timeline: DashboardIncidentDetail["timeline"]; onEvidence: (eventId: string) => void }) {
+  const timelineOrder = new Map(timeline.map((event, index) => [event.event_id, index]));
+  const groups = new Map<string, GroupedCrossServiceLink & { trace_ids: Set<string> }>();
+  for (const link of context.links) {
+    const key = `${link.from_service}\u0000${link.to_service}`;
+    const group = groups.get(key) ?? { from_service: link.from_service, to_service: link.to_service, evidence_ids: [], trace_count: 0, dependency_count: 0, trace_ids: new Set<string>() };
+    group.evidence_ids.push(...link.evidence_ids);
+    if (link.reason === "shared_trace" && link.trace_id) group.trace_ids.add(link.trace_id);
+    if (link.reason === "declared_dependency") group.dependency_count += 1;
+    group.trace_count = group.trace_ids.size;
+    groups.set(key, group);
+  }
+  const serviceOrder = new Map(context.services.map((service, index) => [service.service, index]));
+  const groupedLinks = [...groups.values()]
+    .map(({ trace_ids: _traceIds, ...group }) => ({ ...group, evidence_ids: [...new Set(group.evidence_ids)].sort((left, right) => (timelineOrder.get(left) ?? 0) - (timelineOrder.get(right) ?? 0)) }))
+    .sort((left, right) => (serviceOrder.get(left.from_service) ?? 0) - (serviceOrder.get(right.from_service) ?? 0) || (serviceOrder.get(left.to_service) ?? 0) - (serviceOrder.get(right.to_service) ?? 0));
+  return <section className="cross-service-evidence">
+    <div><span className="eyebrow">CROSS-SERVICE EVIDENCE</span><h2>Propagation path</h2><p>IncidentIQ linked these services only through recorded traces or explicit dependency failures. Expand a relationship only when you need to audit its citations.</p></div>
+    <div className="service-scope" aria-label="Services in investigation">{context.services.map((service) => <article className={service.role} key={service.service}><strong>{service.service}</strong><span>{service.role === "primary" ? "investigation origin" : "linked"} · {service.event_count} events</span></article>)}</div>
+    <div className="relationship-heading"><strong>Observed service relationships</strong><span>{groupedLinks.length} evidence-backed link{groupedLinks.length === 1 ? "" : "s"}</span></div>
+    <ul className="cross-service-links">{groupedLinks.map((link) => <CrossServiceLinkCard key={`${link.from_service}-${link.to_service}`} link={link} timeline={timeline} onEvidence={onEvidence} />)}</ul>
+    <p className="cross-service-footnote">The Evidence tab contains the complete ordered timeline; citations here are hidden by default to keep the topology readable.</p>
+  </section>;
+}
+
+function CrossServiceLinkCard({ link, timeline, onEvidence }: { link: GroupedCrossServiceLink; timeline: DashboardIncidentDetail["timeline"]; onEvidence: (eventId: string) => void }) {
+  return <li><div className="relationship-summary"><strong><span>{link.from_service}</span><i aria-hidden="true">→</i><span>{link.to_service}</span></strong><div>{link.trace_count > 0 && <span>{link.trace_count} shared trace{link.trace_count === 1 ? "" : "s"}</span>}{link.dependency_count > 0 && <span>{link.dependency_count} dependency confirmation{link.dependency_count === 1 ? "" : "s"}</span>}</div></div><details><summary>Inspect cited evidence ({link.evidence_ids.length})</summary><div className="relationship-evidence">{link.evidence_ids.map((eventId) => {
+    const event = timeline.find((candidate) => candidate.event_id === eventId);
+    return <button key={eventId} onClick={() => onEvidence(eventId)}>{humanize(event?.event_type ?? eventId)}{event?.trace_id ? ` · ${event.trace_id}` : ""}</button>;
+  })}</div></details></li>;
+}
+
+function EvidenceLinks({ eventIds, incident, onEvidence, collapsed = false }: { eventIds: string[]; incident: DashboardIncidentDetail; onEvidence: (eventId: string) => void; collapsed?: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const uniqueIds = [...new Set(eventIds)];
   const visibleIds = expanded ? uniqueIds : uniqueIds.slice(0, 4);
-  return <div className="evidence-links">{visibleIds.map((eventId) => {
+  const evidenceButton = (eventId: string) => {
     const event = incident.timeline.find((candidate) => candidate.event_id === eventId);
-    const label = humanize(event?.event_type ?? eventId);
-    return <button key={eventId} onClick={() => onEvidence(eventId)}>{event?.trace_id ? `${label} · ${event.trace_id}` : label}</button>;
-  })}{uniqueIds.length > 4 && <button className="evidence-more" onClick={() => setExpanded(!expanded)}>{expanded ? "Show less" : `View all ${uniqueIds.length} events`}</button>}</div>;
+    const context = event?.trace_id
+      ? traceLabel(event.trace_id)
+      : event?.version
+        ? `v${event.version}`
+        : event
+          ? new Intl.DateTimeFormat(undefined, { timeStyle: "short" }).format(new Date(event.occurred_at))
+          : undefined;
+    const label = event ? `${humanize(event.event_type)} · ${event.service}${context ? ` · ${context}` : ""}` : eventId;
+    return <button key={eventId} onClick={() => onEvidence(eventId)} title={event ? `${event.event_id} · ${formatDate(event.occurred_at)}` : eventId}>{label}</button>;
+  };
+  if (collapsed) return <details className="evidence-citations"><summary>{uniqueIds.length} cited event{uniqueIds.length === 1 ? "" : "s"}</summary><div className="evidence-links">{uniqueIds.map(evidenceButton)}</div></details>;
+  return <div className="evidence-links">{visibleIds.map(evidenceButton)}{uniqueIds.length > 4 && <button className="evidence-more" onClick={() => setExpanded(!expanded)}>{expanded ? "Show less" : `View all ${uniqueIds.length} events`}</button>}</div>;
 }
 
 function AiExplanationPanel({ incident, terms, loading, onGenerate, onEvidence }: { incident: DashboardIncidentDetail; terms: string[]; loading: boolean; onGenerate: () => void; onEvidence: (eventId: string) => void }) {
@@ -665,8 +724,8 @@ function AiExplanationPanel({ incident, terms, loading, onGenerate, onEvidence }
     <div className="ai-heading"><div><span className="eyebrow">AI EVIDENCE REVIEW</span><h2><HighlightedText text={explanation.likely_cause} terms={terms} /></h2><p><HighlightedText text={explanation.summary} terms={terms} /></p></div><span className="ai-label">AI-generated</span></div>
     <div className="ai-confidence"><strong>Why this confidence</strong><span><HighlightedText text={explanation.confidence_basis} terms={terms} /></span></div>
     <div className="ai-grid">
-      <article><h3>Cited observations</h3>{explanation.evidence.map((item, index) => <div className="ai-item" key={`${item.claim}-${index}`}><p><HighlightedText text={item.claim} terms={terms} /></p><EvidenceLinks eventIds={item.evidence_ids} incident={incident} onEvidence={onEvidence} /></div>)}</article>
-      <article><h3>Suggested checks</h3>{explanation.next_checks.map((item, index) => <div className="ai-item" key={`${item.action}-${index}`}><strong>{index + 1}. <HighlightedText text={item.action} terms={terms} /></strong><p><HighlightedText text={item.reason} terms={terms} /></p><EvidenceLinks eventIds={item.evidence_ids} incident={incident} onEvidence={onEvidence} /></div>)}</article>
+      <article><h3>Cited observations</h3>{explanation.evidence.map((item, index) => <div className="ai-item" key={`${item.claim}-${index}`}><p><HighlightedText text={item.claim} terms={terms} /></p><EvidenceLinks eventIds={item.evidence_ids} incident={incident} onEvidence={onEvidence} collapsed /></div>)}</article>
+      <article><h3>Suggested checks</h3>{explanation.next_checks.map((item, index) => <div className="ai-item" key={`${item.action}-${index}`}><strong>{index + 1}. <HighlightedText text={item.action} terms={terms} /></strong><p><HighlightedText text={item.reason} terms={terms} /></p><EvidenceLinks eventIds={item.evidence_ids} incident={incident} onEvidence={onEvidence} collapsed /></div>)}</article>
     </div>
     <div className="ai-limitations"><strong>Known limits</strong><span><HighlightedText text={explanation.limitations.join(" ")} terms={terms} /></span></div>
     <small>Generated {formatDate(explanation.generated_at)} with {explanation.model}. Validate against the timeline before remediation.</small>
@@ -685,7 +744,7 @@ function InvestigationBrief({ incident, terms, onEvidence }: { incident: Dashboa
     <article className="evidence-reasoning">
       <span className="eyebrow">WHY THIS HYPOTHESIS</span>
       <h2>Evidence highlights</h2>
-      {incident.brief.supporting_evidence.length === 0 ? <p>No decisive supporting factor is available yet.</p> : <ul>{incident.brief.supporting_evidence.map((factor, index) => <li key={`${factor.name}-${index}`}><div><strong>{factorLabel(factor.name)}</strong><span className="factor-score">+{factor.score}</span></div><p title={factor.description}><HighlightedText text={factorHighlight(factor.description)} terms={terms} /></p><EvidenceLinks eventIds={factor.evidence_ids} incident={incident} onEvidence={onEvidence} /></li>)}</ul>}
+      {incident.brief.supporting_evidence.length === 0 ? <p>No decisive supporting factor is available yet.</p> : <ul>{incident.brief.supporting_evidence.map((factor, index) => <li key={`${factor.name}-${index}`}><div><strong>{factorLabel(factor.name)}</strong><span className="factor-score">+{factor.score}</span></div><p title={factor.description}><HighlightedText text={factorHighlight(factor.description)} terms={terms} /></p><EvidenceLinks eventIds={factor.evidence_ids} incident={incident} onEvidence={onEvidence} collapsed /></li>)}</ul>}
       {incident.brief.counterevidence.length > 0 && <div className="counterevidence"><strong>Evidence against this cause</strong>{incident.brief.counterevidence.map((factor, index) => <p key={`${factor.name}-${index}`}><HighlightedText text={`${factor.description} (${factor.score})`} terms={terms} /></p>)}</div>}
     </article>
     <article className="candidate-ranking">

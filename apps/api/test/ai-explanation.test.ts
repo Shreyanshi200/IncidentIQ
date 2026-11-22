@@ -99,6 +99,8 @@ test("AI explanations use structured, non-stored responses and return only valid
     assert.equal(requestBody?.max_output_tokens, 8_000);
     assert.deepEqual(requestBody?.reasoning, { effort: "low" });
     assert.equal((requestBody?.text as { format?: { type?: string } }).format?.type, "json_schema");
+    const schemaText = JSON.stringify((requestBody?.text as { format?: { schema?: unknown } }).format?.schema);
+    assert.match(schemaText, /"enum":\["deploy-1","error-1"\]/);
   } finally {
     globalThis.fetch = previousFetch;
     if (previousKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = previousKey;

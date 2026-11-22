@@ -23,10 +23,16 @@ interface ReportLayout {
   document: PDFKit.PDFDocument;
   pageSections: string[];
   activeSection: string;
+  highlightTerms: string[];
 }
 
+const HIGHLIGHTED_ATTRIBUTES = new Set(["route", "path", "endpoint", "dependency", "commit_sha", "commit", "namespace", "alertname", "ref", "repository", "workflow", "cluster", "pod", "container"]);
+
 function printable(value: string): string {
-  return value.replace(/[\u2010-\u2015]/g, "-");
+  return value
+    .replace(/[\u2010-\u2015]/g, "-")
+    .replaceAll("\u2192", "->")
+    .replaceAll("\u2190", "<-");
 }
 
 function label(value: string): string {
@@ -36,6 +42,38 @@ function label(value: string): string {
 function sentenceCase(value: string): string {
   const text = label(value);
   return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function reportTerms(incident: DashboardIncidentDetail): string[] {
+  const terms = new Set<string>();
+  for (const event of incident.timeline) {
+    for (const value of [event.service, event.version, event.trace_id, event.resource]) if (value && value.length <= 120) terms.add(printable(value));
+    if (event.service.endsWith("-api") && event.service.length > 4) terms.add(printable(event.service.slice(0, -4)));
+    for (const [name, value] of Object.entries(event.attributes)) {
+      if (!HIGHLIGHTED_ATTRIBUTES.has(name) || typeof value !== "string" || value.length < 2 || value.length > 120) continue;
+      terms.add(printable(value));
+      if ((name === "commit" || name === "commit_sha") && value.length > 12) terms.add(printable(value.slice(0, 12)));
+    }
+  }
+  return [...terms].sort((left, right) => right.length - left.length).slice(0, 100);
+}
+
+function highlightedText(document: PDFKit.PDFDocument, text: string, terms: string[], x: number, y: number, options: PDFKit.Mixins.TextOptions, fontSize: number, color: string): void {
+  const value = printable(text);
+  if (terms.length === 0) {
+    document.font("Helvetica").fontSize(fontSize).fillColor(color).text(value, x, y, options);
+    return;
+  }
+  const escaped = terms.map((term) => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const highlighted = new Set(terms.map((term) => term.toLocaleLowerCase()));
+  const parts = value.split(new RegExp(`(?<![A-Za-z0-9_-])(${escaped.join("|")})(?![A-Za-z0-9_-])`, "gi")).filter(Boolean);
+  parts.forEach((part, index) => {
+    const isHighlighted = highlighted.has(part.toLocaleLowerCase());
+    document.font(isHighlighted ? "Helvetica-Bold" : "Helvetica").fontSize(fontSize).fillColor(isHighlighted ? COLORS.accentDark : color);
+    const continued = index < parts.length - 1;
+    if (index === 0) document.text(part, x, y, { ...options, continued });
+    else document.text(part, { continued });
+  });
 }
 
 function factorTitle(value: string): string {
@@ -59,13 +97,6 @@ function formatTimestamp(value: string, includeDate = true): string {
     ? { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false, timeZone: "UTC" }
     : { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false, timeZone: "UTC" };
   return `${new Intl.DateTimeFormat("en-US", options).format(date)} UTC`;
-}
-
-function compactValue(value: unknown): string {
-  if (typeof value === "string") return printable(value);
-  if (value === null) return "null";
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
-  return printable(JSON.stringify(value));
 }
 
 function eventAttribute(event: DashboardTimelineEvent, name: string): string | undefined {
@@ -111,10 +142,6 @@ export function describeReportEvent(event: DashboardTimelineEvent): string {
     return `${event.service} reported ${state}${ready && desired ? ` with ${ready} of ${desired} replicas ready` : ""}${alerts ? ` and ${alerts} open alerts` : ""}.`;
   }
   return `${sentenceCase(event.source)} recorded ${label(event.event_type)} for ${event.service}.`;
-}
-
-function evidenceObservation(event: DashboardTimelineEvent): string {
-  return `${formatTimestamp(event.occurred_at, false)} - ${describeReportEvent(event)}`;
 }
 
 function contentWidth(document: PDFKit.PDFDocument): number {
@@ -203,101 +230,104 @@ function drawCover(layout: ReportLayout, incident: DashboardIncidentDetail): voi
   document.text(`LATEST EVIDENCE  ${formatTimestamp(incident.last_event_at)}`, left + width / 2, 294, { width: width / 2, align: "right", lineBreak: false });
 
   const summaryY = 324;
-  const summaryHeight = document.font("Helvetica").fontSize(10).heightOfString(printable(incident.brief.summary), { width: width - 36, lineGap: 3 });
+  const summaryHeight = document.font("Helvetica").fontSize(10).heightOfString(printable(incident.brief.summary), { width: width - 36, lineGap: 3 }) + 4;
   const summaryCardHeight = Math.max(102, summaryHeight + 62);
   document.roundedRect(left, summaryY, width, summaryCardHeight, 8).fill(COLORS.accentSoft);
   document.font("Helvetica-Bold").fontSize(7.5).fillColor(COLORS.accentDark).text("LEADING HYPOTHESIS", left + 18, summaryY + 16, { characterSpacing: 0.9, lineBreak: false });
   document.font("Helvetica-Bold").fontSize(15).fillColor(COLORS.ink).text(printable(incident.brief.headline), left + 18, summaryY + 34, { width: width - 36 });
   document.moveDown(0.35);
-  document.font("Helvetica").fontSize(10).fillColor(COLORS.ink).text(printable(incident.brief.summary), left + 18, document.y, { width: width - 36, lineGap: 3 });
+  highlightedText(document, incident.brief.summary, layout.highlightTerms, left + 18, document.y, { width: width - 36, lineGap: 3 }, 10, COLORS.ink);
 
   const scopeY = summaryY + summaryCardHeight + 14;
   document.roundedRect(left, scopeY, width, 62, 8).fill(COLORS.paper);
   document.font("Helvetica-Bold").fontSize(7.5).fillColor(COLORS.muted).text("OBSERVED SCOPE", left + 18, scopeY + 14, { characterSpacing: 0.8, lineBreak: false });
-  document.font("Helvetica").fontSize(9).fillColor(COLORS.ink).text(printable(incident.brief.observed_scope), left + 18, scopeY + 31, { width: width - 36, lineGap: 2, height: 24, ellipsis: true });
+  highlightedText(document, incident.brief.observed_scope, layout.highlightTerms, left + 18, scopeY + 31, { width: width - 36, lineGap: 2, height: 24, ellipsis: true }, 9, COLORS.ink);
 
-  const navY = scopeY + 82;
-  document.font("Helvetica-Bold").fontSize(10).fillColor(COLORS.ink).text("Navigate this report", left, navY, { lineBreak: false });
+  const navY = scopeY + 78;
+  document.font("Helvetica-Bold").fontSize(10).fillColor(COLORS.ink).text("Report sections", left, navY, { lineBreak: false });
   const navCards = [
-    { number: "01", title: "Evidence assessment", detail: "Why this hypothesis", destination: "evidence" },
-    ...(incident.ai_explanation ? [{ number: "02", title: "AI evidence review", detail: "Optional cited guidance", destination: "ai-review" }] : []),
-    { number: incident.ai_explanation ? "03" : "02", title: "Validation plan", detail: "What to verify next", destination: "validation" },
-    { number: incident.ai_explanation ? "04" : "03", title: "Evidence timeline", detail: "What happened, in order", destination: "timeline" }
+    { number: "01", title: "Assessment", destination: "evidence" },
+    ...(incident.cross_service ? [{ number: "02", title: "Service map", destination: "cross-service" }] : []),
+    ...(incident.ai_explanation ? [{ number: incident.cross_service ? "03" : "02", title: "AI review", destination: "ai-review" }] : []),
+    { number: String(2 + Number(Boolean(incident.cross_service)) + Number(Boolean(incident.ai_explanation))).padStart(2, "0"), title: "Validation", destination: "validation" },
+    { number: String(3 + Number(Boolean(incident.cross_service)) + Number(Boolean(incident.ai_explanation))).padStart(2, "0"), title: "Timeline", destination: "timeline" }
   ];
   const navGap = 10;
   const navWidth = (width - navGap * (navCards.length - 1)) / navCards.length;
   navCards.forEach((item, index) => {
     const x = left + index * (navWidth + navGap);
     const y = navY + 23;
-    document.roundedRect(x, y, navWidth, 58, 7).lineWidth(0.7).fillAndStroke(COLORS.white, COLORS.faint);
-    document.font("Helvetica-Bold").fontSize(8).fillColor(COLORS.accent).text(item.number, x + 12, y + 12, { lineBreak: false });
-    document.font("Helvetica-Bold").fontSize(9).fillColor(COLORS.ink).text(item.title, x + 12, y + 27, { width: navWidth - 24, ellipsis: true, lineBreak: false });
-    document.font("Helvetica").fontSize(7.5).fillColor(COLORS.muted).text(item.detail, x + 12, y + 42, { width: navWidth - 24, ellipsis: true, lineBreak: false });
-    document.goTo(x, y, navWidth, 58, item.destination);
+    document.roundedRect(x, y, navWidth, 38, 7).lineWidth(0.7).fillAndStroke(COLORS.white, COLORS.faint);
+    document.font("Helvetica-Bold").fontSize(7.5).fillColor(COLORS.accent).text(item.number, x + 10, y + 8, { lineBreak: false });
+    document.font("Helvetica-Bold").fontSize(8.3).fillColor(COLORS.ink).text(item.title, x + 10, y + 21, { width: navWidth - 20, ellipsis: true, lineBreak: false });
+    document.goTo(x, y, navWidth, 38, item.destination);
   });
 
-  const noteY = navY + 98;
+  const noteY = navY + 78;
   document.roundedRect(left, noteY, width, 40, 6).fill(COLORS.warningSoft);
   document.font("Helvetica-Bold").fontSize(8).fillColor(COLORS.warning).text("IMPORTANT", left + 14, noteY + 12, { width: 62, lineBreak: false });
   document.font("Helvetica").fontSize(8).fillColor(COLORS.ink).text("This report prioritizes evidence for investigation. It does not prove root cause or measure customer impact.", left + 78, noteY + 11, { width: width - 92, lineGap: 2 });
 }
 
-function aiReviewCard(layout: ReportLayout, title: string, body: string, evidenceIds: string[]): void {
+function aiReviewCard(layout: ReportLayout, title: string, body: string): void {
   const { document } = layout;
   const left = document.page.margins.left;
   const width = contentWidth(document);
-  const bodyHeight = document.font("Helvetica").fontSize(9).heightOfString(printable(body), { width: width - 36, lineGap: 2 });
-  const ids = `Cited evidence: ${evidenceIds.join(", ")}`;
-  const idsHeight = document.font("Helvetica").fontSize(7.2).heightOfString(printable(ids), { width: width - 36, lineGap: 1 });
-  const height = Math.max(76, 52 + bodyHeight + idsHeight);
+  const bodyHeight = document.font("Helvetica").fontSize(9).heightOfString(printable(body), { width: width - 36, lineGap: 2 }) + 4;
+  const height = Math.max(64, 44 + bodyHeight);
   ensureSpace(layout, height + 10);
   const y = document.y;
   document.roundedRect(left, y, width, height, 8).lineWidth(0.7).fillAndStroke(COLORS.white, COLORS.faint);
   document.rect(left, y, 5, height).fill("#7668c7");
   document.font("Helvetica-Bold").fontSize(9.5).fillColor(COLORS.ink).text(printable(title), left + 18, y + 14, { width: width - 36 });
-  document.font("Helvetica").fontSize(9).fillColor(COLORS.ink).text(printable(body), left + 18, document.y + 6, { width: width - 36, lineGap: 2 });
-  document.font("Helvetica").fontSize(7.2).fillColor(COLORS.muted).text(printable(ids), left + 18, y + height - idsHeight - 10, { width: width - 36, lineGap: 1 });
+  highlightedText(document, body, layout.highlightTerms, left + 18, document.y + 6, { width: width - 36, lineGap: 2 }, 9, COLORS.ink);
   document.y = y + height + 10;
 }
 
 function drawAiReview(layout: ReportLayout, incident: DashboardIncidentDetail): void {
   const explanation = incident.ai_explanation;
   if (!explanation) return;
-  sectionStart(layout, "AI evidence review", "Optional model-generated guidance grounded in the event IDs stored with this incident.", "ai-review");
+  sectionStart(layout, "AI evidence review", "Optional model-generated guidance summarized from evidence stored with this incident.", "ai-review");
   const { document } = layout;
   const left = document.page.margins.left;
   const width = contentWidth(document);
 
   const bannerY = document.y;
   const causeHeight = document.font("Helvetica-Bold").fontSize(14).heightOfString(printable(explanation.likely_cause), { width: width - 36 });
-  const summaryHeight = document.font("Helvetica").fontSize(9.5).heightOfString(printable(explanation.summary), { width: width - 36, lineGap: 2 });
+  const summaryHeight = document.font("Helvetica").fontSize(9.5).heightOfString(printable(explanation.summary), { width: width - 36, lineGap: 2 }) + 4;
   const bannerHeight = Math.max(112, 61 + causeHeight + summaryHeight);
   document.roundedRect(left, bannerY, width, bannerHeight, 8).fill("#f0effb");
   document.font("Helvetica-Bold").fontSize(7.5).fillColor("#5c50aa").text("AI-GENERATED HYPOTHESIS", left + 18, bannerY + 16, { characterSpacing: 0.8, lineBreak: false });
   document.font("Helvetica-Bold").fontSize(14).fillColor(COLORS.ink).text(printable(explanation.likely_cause), left + 18, bannerY + 36, { width: width - 36 });
-  document.font("Helvetica").fontSize(9.5).fillColor(COLORS.ink).text(printable(explanation.summary), left + 18, document.y + 7, { width: width - 36, lineGap: 2 });
+  highlightedText(document, explanation.summary, layout.highlightTerms, left + 18, document.y + 7, { width: width - 36, lineGap: 2 }, 9.5, COLORS.ink);
   document.y = bannerY + bannerHeight + 14;
 
-  aiReviewCard(layout, "Why the model gave this assessment", explanation.confidence_basis, explanation.evidence.flatMap((item) => item.evidence_ids));
+  aiReviewCard(layout, "Why the model gave this assessment", explanation.confidence_basis);
+  const groundedEventCount = new Set([
+    ...explanation.evidence.flatMap((item) => item.evidence_ids),
+    ...explanation.next_checks.flatMap((item) => item.evidence_ids)
+  ]).size;
+  document.font("Helvetica").fontSize(7.8).fillColor(COLORS.muted).text(`Grounded in ${groundedEventCount} stored event${groundedEventCount === 1 ? "" : "s"}. Exact event IDs and raw attributes remain available in the dashboard.`, left, document.y, { width, lineGap: 2 });
+  document.moveDown(1.1);
   ensureSpace(layout, 42);
   const observationsHeadingY = document.y;
-  document.font("Helvetica-Bold").fontSize(13).fillColor(COLORS.ink).text("Cited observations", left, observationsHeadingY, { lineBreak: false });
+  document.font("Helvetica-Bold").fontSize(13).fillColor(COLORS.ink).text("Key observations", left, observationsHeadingY, { lineBreak: false });
   document.y = observationsHeadingY + 26;
-  explanation.evidence.forEach((item, index) => aiReviewCard(layout, `Observation ${index + 1}`, item.claim, item.evidence_ids));
+  explanation.evidence.forEach((item, index) => aiReviewCard(layout, `Observation ${index + 1}`, item.claim));
 
   ensureSpace(layout, 42);
   const checksHeadingY = document.y;
   document.font("Helvetica-Bold").fontSize(13).fillColor(COLORS.ink).text("Suggested investigation checks", left, checksHeadingY, { lineBreak: false });
   document.y = checksHeadingY + 26;
-  explanation.next_checks.forEach((item, index) => aiReviewCard(layout, `Check ${index + 1}: ${item.action}`, item.reason, item.evidence_ids));
+  explanation.next_checks.forEach((item, index) => aiReviewCard(layout, `Check ${index + 1}: ${item.action}`, item.reason));
 
   const limitations = explanation.limitations.map((item) => `- ${item}`).join("\n");
-  const limitationsHeight = document.font("Helvetica").fontSize(8.5).heightOfString(printable(limitations), { width: width - 36, lineGap: 2 });
+  const limitationsHeight = document.font("Helvetica").fontSize(8.5).heightOfString(printable(limitations), { width: width - 36, lineGap: 2 }) + 4;
   ensureSpace(layout, limitationsHeight + 70);
   const limitationsY = document.y;
   document.roundedRect(left, limitationsY, width, limitationsHeight + 50, 8).fill(COLORS.warningSoft);
   document.font("Helvetica-Bold").fontSize(8).fillColor(COLORS.warning).text("KNOWN LIMITS", left + 18, limitationsY + 13, { characterSpacing: 0.8, lineBreak: false });
-  document.font("Helvetica").fontSize(8.5).fillColor(COLORS.ink).text(printable(limitations), left + 18, limitationsY + 31, { width: width - 36, lineGap: 2 });
+  highlightedText(document, limitations, layout.highlightTerms, left + 18, limitationsY + 31, { width: width - 36, lineGap: 2 }, 8.5, COLORS.ink);
   document.y = limitationsY + limitationsHeight + 62;
   document.font("Helvetica").fontSize(7).fillColor(COLORS.muted).text(`Generated ${formatTimestamp(explanation.generated_at)} with ${printable(explanation.model)}. Validate this guidance against the deterministic ranking and raw timeline before remediation.`, left, document.y, { width, lineGap: 2 });
 }
@@ -326,35 +356,23 @@ function drawCandidateRanking(layout: ReportLayout, incident: DashboardIncidentD
   document.y = y + height + 16;
 }
 
-function evidenceCard(layout: ReportLayout, title: string, description: string, score: number, evidenceIds: string[], timeline: DashboardTimelineEvent[], kind: "supporting" | "counter"): void {
+function evidenceCard(layout: ReportLayout, title: string, description: string, score: number, evidenceIds: string[], kind: "supporting" | "counter"): void {
   const { document } = layout;
   const left = document.page.margins.left;
   const width = contentWidth(document);
   const background = kind === "supporting" ? COLORS.accentSoft : COLORS.warningSoft;
   const accent = kind === "supporting" ? COLORS.accent : COLORS.warning;
-  const descriptionHeight = document.font("Helvetica").fontSize(9).heightOfString(printable(description), { width: width - 36, lineGap: 2 });
-  const visibleEvidenceIds = evidenceIds.slice(0, 6);
-  const observations = visibleEvidenceIds.flatMap((eventId) => {
-    const event = timeline.find((candidate) => candidate.event_id === eventId);
-    return event ? [evidenceObservation(event)] : [];
-  }).map((observation) => `- ${observation}`);
-  if (evidenceIds.length > visibleEvidenceIds.length) observations.push(`- ${evidenceIds.length - visibleEvidenceIds.length} additional linked events are preserved in the evidence timeline.`);
-  const observationText = observations.join("\n");
-  const observationsHeight = document.font("Helvetica").fontSize(8).heightOfString(printable(observationText), { width: width - 36, lineGap: 2 });
-  const ids = `Traceability: ${visibleEvidenceIds.join(", ")}${evidenceIds.length > visibleEvidenceIds.length ? ` (+${evidenceIds.length - visibleEvidenceIds.length} more in timeline)` : ""}`;
-  const idsHeight = document.font("Helvetica").fontSize(7.2).heightOfString(printable(ids), { width: width - 40, lineGap: 1 });
-  const height = Math.max(108, 74 + descriptionHeight + observationsHeight + idsHeight);
+  const descriptionHeight = document.font("Helvetica").fontSize(9).heightOfString(printable(description), { width: width - 36, lineGap: 2 }) + 4;
+  const evidenceCount = new Set(evidenceIds).size;
+  const height = Math.max(82, 64 + descriptionHeight);
   ensureSpace(layout, height + 10);
   const y = document.y;
   document.roundedRect(left, y, width, height, 8).fill(background);
   document.roundedRect(left, y, 6, height, 3).fill(accent);
-  document.font("Helvetica-Bold").fontSize(10).fillColor(COLORS.ink).text(factorTitle(title), left + 18, y + 15, { width: width - 105, ellipsis: true, lineBreak: false });
-  pill(document, score > 0 ? `+${score} SCORE` : `${score} SCORE`, left + width - 88, y + 11, kind === "supporting" ? "#ccebed" : "#f7dfaa", accent, 74);
-  document.font("Helvetica").fontSize(9).fillColor(COLORS.ink).text(printable(description), left + 18, y + 37, { width: width - 36, lineGap: 2 });
-  const observationsY = y + 45 + descriptionHeight;
-  document.font("Helvetica-Bold").fontSize(7.5).fillColor(accent).text("LINKED OBSERVATIONS", left + 18, observationsY, { characterSpacing: 0.7, lineBreak: false });
-  document.font("Helvetica").fontSize(8).fillColor(COLORS.ink).text(printable(observationText), left + 18, observationsY + 15, { width: width - 36, lineGap: 2 });
-  document.font("Helvetica").fontSize(7.2).fillColor(COLORS.muted).text(printable(ids), left + 18, y + height - idsHeight - 11, { width: width - 36, lineGap: 1 });
+  document.font("Helvetica-Bold").fontSize(10).fillColor(COLORS.ink).text(factorTitle(title), left + 18, y + 15, { width: width - 130, ellipsis: true, lineBreak: false });
+  pill(document, score > 0 ? `+${score} RANKING PTS` : `${score} RANKING PTS`, left + width - 112, y + 11, kind === "supporting" ? "#ccebed" : "#f7dfaa", accent, 98);
+  highlightedText(document, description, layout.highlightTerms, left + 18, y + 37, { width: width - 36, lineGap: 2 }, 9, COLORS.ink);
+  document.font("Helvetica").fontSize(7.5).fillColor(COLORS.muted).text(`Based on ${evidenceCount} linked event${evidenceCount === 1 ? "" : "s"}; chronology is preserved in the timeline.`, left + 18, y + height - 18, { width: width - 36, lineBreak: false });
   document.y = y + height + 10;
 }
 
@@ -379,22 +397,65 @@ function drawEvidenceAssessment(layout: ReportLayout, incident: DashboardInciden
     document.font("Helvetica").fontSize(9).fillColor(COLORS.muted).text("No decisive supporting factor is available yet.", left, document.y, { width });
     document.moveDown(1);
   }
-  for (const factor of incident.brief.supporting_evidence) evidenceCard(layout, factor.name, factor.description, factor.score, factor.evidence_ids, incident.timeline, "supporting");
+  for (const factor of incident.brief.supporting_evidence) evidenceCard(layout, factor.name, factor.description, factor.score, factor.evidence_ids, "supporting");
 
   if (incident.brief.counterevidence.length > 0) {
     ensureSpace(layout, 50);
     const counterHeadingY = document.y + 4;
     document.font("Helvetica-Bold").fontSize(13).fillColor(COLORS.ink).text("Counterevidence", left, counterHeadingY, { lineBreak: false });
     document.y = counterHeadingY + 26;
-    for (const factor of incident.brief.counterevidence) evidenceCard(layout, factor.name, factor.description, factor.score, factor.evidence_ids, incident.timeline, "counter");
+    for (const factor of incident.brief.counterevidence) evidenceCard(layout, factor.name, factor.description, factor.score, factor.evidence_ids, "counter");
   }
+}
+
+function drawCrossService(layout: ReportLayout, incident: DashboardIncidentDetail): void {
+  const context = incident.cross_service;
+  if (!context) return;
+  sectionStart(layout, "Cross-service propagation", "Service-local incidents are shown together only when stored evidence establishes a trace or dependency link.", "cross-service");
+  const { document } = layout;
+  const left = document.page.margins.left;
+  const width = contentWidth(document);
+  const serviceText = context.services.map((service) => `${service.service}${service.role === "primary" ? " (opened incident)" : ""}: ${service.event_count} events`).join("   |   ");
+  const serviceHeight = Math.max(72, document.font("Helvetica").fontSize(9).heightOfString(printable(serviceText), { width: width - 36, lineGap: 3 }) + 46);
+  const serviceY = document.y;
+  document.roundedRect(left, serviceY, width, serviceHeight, 8).fill(COLORS.accentSoft);
+  document.font("Helvetica-Bold").fontSize(8).fillColor(COLORS.accentDark).text("AFFECTED SERVICES", left + 18, serviceY + 14, { characterSpacing: 0.8, lineBreak: false });
+  highlightedText(document, serviceText, layout.highlightTerms, left + 18, serviceY + 31, { width: width - 36, lineGap: 3 }, 9, COLORS.ink);
+  document.y = serviceY + serviceHeight + 18;
+  document.font("Helvetica-Bold").fontSize(13).fillColor(COLORS.ink).text("Evidence-backed links", left, document.y, { lineBreak: false });
+  document.moveDown(0.8);
+  const groups = new Map<string, { from: string; to: string; evidenceIds: Set<string>; traceIds: Set<string>; dependencyObservations: number }>();
+  for (const link of context.links) {
+    const key = `${link.from_service}\u0000${link.to_service}`;
+    const group = groups.get(key) ?? { from: link.from_service, to: link.to_service, evidenceIds: new Set<string>(), traceIds: new Set<string>(), dependencyObservations: 0 };
+    link.evidence_ids.forEach((eventId) => group.evidenceIds.add(eventId));
+    if (link.reason === "shared_trace" && link.trace_id) group.traceIds.add(link.trace_id);
+    if (link.reason === "declared_dependency") group.dependencyObservations += 1;
+    groups.set(key, group);
+  }
+  for (const link of groups.values()) {
+    const details = [
+      link.traceIds.size > 0 ? `${link.traceIds.size} shared trace${link.traceIds.size === 1 ? "" : "s"}` : undefined,
+      link.dependencyObservations > 0 ? `${link.dependencyObservations} dependency confirmation${link.dependencyObservations === 1 ? "" : "s"}` : undefined,
+      `${link.evidenceIds.size} linked event${link.evidenceIds.size === 1 ? "" : "s"}`
+    ].filter(Boolean).join("  |  ");
+    const height = 52;
+    ensureSpace(layout, height + 10);
+    const y = document.y;
+    document.roundedRect(left, y, width, height, 8).lineWidth(0.7).fillAndStroke(COLORS.white, COLORS.faint);
+    document.rect(left, y, 5, height).fill(COLORS.accent);
+    document.font("Helvetica-Bold").fontSize(9.5).fillColor(COLORS.ink).text(printable(`${link.from} -> ${link.to}`), left + 18, y + 12, { width: width - 36, lineBreak: false });
+    document.font("Helvetica").fontSize(8).fillColor(COLORS.muted).text(printable(details), left + 18, y + 30, { width: width - 36, lineBreak: false });
+    document.y = y + height + 10;
+  }
+  document.font("Helvetica").fontSize(7.8).fillColor(COLORS.muted).text("This section summarizes relationship strength. The chronological timeline is the single event-level record in this PDF; exact IDs and raw attributes remain available in the dashboard.", left, document.y + 4, { width, lineGap: 2 });
 }
 
 function validationCard(layout: ReportLayout, check: string, index: number): void {
   const { document } = layout;
   const left = document.page.margins.left;
   const width = contentWidth(document);
-  const textHeight = document.font("Helvetica").fontSize(10).heightOfString(printable(check), { width: width - 86, lineGap: 3 });
+  const textHeight = document.font("Helvetica").fontSize(10).heightOfString(printable(check), { width: width - 86, lineGap: 3 }) + 4;
   const height = Math.max(66, textHeight + 34);
   ensureSpace(layout, height + 11);
   const y = document.y;
@@ -402,7 +463,7 @@ function validationCard(layout: ReportLayout, check: string, index: number): voi
   document.roundedRect(left, y, 56, height, 8).fill(COLORS.navy);
   document.font("Helvetica-Bold").fontSize(8).fillColor("#65d9e6").text("STEP", left, y + 15, { width: 56, align: "center", characterSpacing: 0.8, lineBreak: false });
   document.font("Helvetica-Bold").fontSize(18).fillColor(COLORS.white).text(String(index + 1).padStart(2, "0"), left, y + 31, { width: 56, align: "center", lineBreak: false });
-  document.font("Helvetica").fontSize(10).fillColor(COLORS.ink).text(printable(check), left + 72, y + 17, { width: width - 88, lineGap: 3 });
+  highlightedText(document, check, layout.highlightTerms, left + 72, y + 17, { width: width - 88, lineGap: 3 }, 10, COLORS.ink);
   document.y = y + height + 11;
 }
 
@@ -428,7 +489,7 @@ function drawValidationPlan(layout: ReportLayout, incident: DashboardIncidentDet
   const contextY = document.y;
   document.roundedRect(left, contextY, width, 76, 8).fill(COLORS.accentSoft);
   document.font("Helvetica-Bold").fontSize(8).fillColor(COLORS.accentDark).text("INVESTIGATION CONTEXT", left + 16, contextY + 13, { characterSpacing: 0.8, lineBreak: false });
-  document.font("Helvetica").fontSize(9).fillColor(COLORS.ink).text(printable(incident.brief.observed_scope), left + 16, contextY + 31, { width: width - 32, height: 38, ellipsis: true, lineGap: 2 });
+  highlightedText(document, incident.brief.observed_scope, layout.highlightTerms, left + 16, contextY + 31, { width: width - 32, height: 38, ellipsis: true, lineGap: 2 }, 9, COLORS.ink);
   document.y = contextY + 92;
 
   incident.next_checks.forEach((check, index) => validationCard(layout, check, index));
@@ -464,42 +525,27 @@ function eventCard(layout: ReportLayout, event: DashboardTimelineEvent, index: n
   const { document } = layout;
   const left = document.page.margins.left;
   const width = contentWidth(document);
-  const entries = Object.entries(event.attributes);
-  const middle = Math.ceil(entries.length / 2);
-  const columns = [entries.slice(0, middle), entries.slice(middle)];
-  const columnWidth = (width - 62) / 2;
-  const columnText = columns.map((column) => column.map(([name, value]) => `${label(name)}: ${compactValue(value)}`).join("\n") || "No additional attributes");
   const narrative = describeReportEvent(event);
-  const narrativeHeight = document.font("Helvetica").fontSize(8.5).heightOfString(printable(narrative), { width: width - 86, lineGap: 2 });
-  document.font("Courier").fontSize(7.1);
-  const attributeHeight = Math.max(...columnText.map((text) => document.heightOfString(text, { width: columnWidth, lineGap: 2 })));
-  const dividerOffset = 60 + narrativeHeight;
-  const attributesOffset = dividerOffset + 12;
-  const height = Math.max(132, attributesOffset + attributeHeight + 26);
-  const usableHeight = document.page.height - document.page.margins.top - document.page.margins.bottom - 30;
-  ensureSpace(layout, Math.min(height + 30, usableHeight));
+  const narrativeHeight = document.font("Helvetica").fontSize(8.5).heightOfString(printable(narrative), { width: width - 86, lineGap: 2 }) + 4;
+  const height = Math.max(70, 50 + narrativeHeight);
+  ensureSpace(layout, height + 10);
   const y = document.y;
   const accent = severityColor(event.severity);
   document.roundedRect(left, y, width, height, 8).lineWidth(0.6).fillAndStroke(COLORS.paper, COLORS.faint);
   document.roundedRect(left, y, 6, height, 3).fill(accent);
-  document.circle(left + 27, y + 24, 13).fill(accent);
-  document.font("Helvetica-Bold").fontSize(8).fillColor(COLORS.white).text(String(index + 1).padStart(2, "0"), left + 19, y + 20, { width: 16, align: "center", lineBreak: false });
-  document.font("Helvetica-Bold").fontSize(11).fillColor(COLORS.ink).text(sentenceCase(event.event_type), left + 50, y + 15, { width: width - 248, ellipsis: true, lineBreak: false });
-  document.font("Helvetica").fontSize(7.5).fillColor(COLORS.muted).text(formatTimestamp(event.occurred_at, false), left + width - 188, y + 17, { width: 172, align: "right", lineBreak: false });
+  document.circle(left + 27, y + 22, 12).fill(accent);
+  document.font("Helvetica-Bold").fontSize(7.5).fillColor(COLORS.white).text(String(index + 1).padStart(2, "0"), left + 19, y + 18, { width: 16, align: "center", lineBreak: false });
+  document.font("Helvetica-Bold").fontSize(10.5).fillColor(COLORS.ink).text(sentenceCase(event.event_type), left + 50, y + 12, { width: width - 248, ellipsis: true, lineBreak: false });
+  document.font("Helvetica").fontSize(7.3).fillColor(COLORS.muted).text(formatTimestamp(event.occurred_at, false), left + width - 188, y + 14, { width: 172, align: "right", lineBreak: false });
 
-  const context = [sentenceCase(event.source), sentenceCase(event.severity), event.version ? `Version ${event.version}` : undefined, event.resource, event.trace_id ? `Trace ${event.trace_id}` : undefined].filter(Boolean).join("  |  ");
-  document.font("Helvetica").fontSize(8).fillColor(COLORS.muted).text(printable(context), left + 50, y + 36, { width: width - 66, ellipsis: true, lineBreak: false });
-  document.font("Helvetica").fontSize(8.5).fillColor(COLORS.ink).text(printable(narrative), left + 50, y + 53, { width: width - 66, lineGap: 2 });
-  document.moveTo(left + 18, y + dividerOffset).lineTo(left + width - 18, y + dividerOffset).lineWidth(0.5).strokeColor(COLORS.faint).stroke();
-  document.font("Courier").fontSize(7.1).fillColor("#3e5168");
-  document.text(columnText[0] ?? "", left + 18, y + attributesOffset, { width: columnWidth, lineGap: 2 });
-  document.text(columnText[1] ?? "", left + 34 + columnWidth, y + attributesOffset, { width: columnWidth, lineGap: 2 });
-  document.font("Helvetica").fontSize(6.8).fillColor(COLORS.muted).text(`EVENT ID  ${printable(event.event_id)}`, left + 18, y + height - 14, { width: width - 36, ellipsis: true, lineBreak: false });
-  document.y = y + height + 12;
+  const context = [sentenceCase(event.source), sentenceCase(event.severity), event.version ? `Version ${event.version}` : undefined, event.resource, event.trace_id].filter(Boolean).join("  |  ");
+  highlightedText(document, context, layout.highlightTerms, left + 50, y + 31, { width: width - 66, ellipsis: true, lineBreak: false }, 7.7, COLORS.muted);
+  highlightedText(document, narrative, layout.highlightTerms, left + 50, y + 46, { width: width - 66, lineGap: 2 }, 8.3, COLORS.ink);
+  document.y = y + height + 7;
 }
 
 function drawTimeline(layout: ReportLayout, incident: DashboardIncidentDetail): void {
-  sectionStart(layout, "Evidence timeline", "Events are ordered by when each source observed them. Every linked attribute remains available for verification.", "timeline");
+  sectionStart(layout, "Evidence timeline", "All linked events are ordered by observation time and summarized once. Exact IDs and raw attributes remain available in the dashboard.", "timeline");
   const { document } = layout;
   const left = document.page.margins.left;
   const width = contentWidth(document);
@@ -533,9 +579,10 @@ function footer(document: PDFKit.PDFDocument, incident: DashboardIncidentDetail,
 }
 
 function writeReport(document: PDFKit.PDFDocument, incident: DashboardIncidentDetail): void {
-  const layout: ReportLayout = { document, pageSections: ["Executive summary"], activeSection: "Executive summary" };
+  const layout: ReportLayout = { document, pageSections: ["Executive summary"], activeSection: "Executive summary", highlightTerms: reportTerms(incident) };
   drawCover(layout, incident);
   drawEvidenceAssessment(layout, incident);
+  drawCrossService(layout, incident);
   drawAiReview(layout, incident);
   drawValidationPlan(layout, incident);
   drawTimeline(layout, incident);
