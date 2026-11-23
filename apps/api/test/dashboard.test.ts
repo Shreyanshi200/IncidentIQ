@@ -56,7 +56,7 @@ test("dashboard aggregates and relabels legacy repeated cross-service factors", 
     { name: "propagation_order", score: 4, evidence_ids: [`payment-${suffix}`, `checkout-${suffix}`] },
     { name: "entity_match", score: 3, evidence_ids: [`payment-${suffix}`, `checkout-${suffix}`] }
   ]);
-  const service = new DashboardService({} as never, {} as never, {} as never);
+  const service = new DashboardService({} as never, {} as never, {} as never, {} as never);
   const brief = (service as unknown as {
     brief(cause: string, confidence: string, investigation: unknown, events: DashboardTimelineEvent[]): DashboardInvestigationBrief;
   }).brief("downstream_timeout", "high", { candidates: [{ cause: "downstream_timeout", score: 35, factors }] }, timeline);
@@ -70,6 +70,52 @@ test("dashboard aggregates and relabels legacy repeated cross-service factors", 
   assert.equal("context" in brief, false);
   assert.match(brief.supporting_evidence[0]?.description ?? "", /across 5 shared traces.*payments-api.*before checkout-api/i);
   assert.match(brief.supporting_evidence[1]?.description ?? "", /5 shared traces link payments-api and checkout-api/i);
+});
+
+test("dashboard archive is tenant scoped and reconstructs a read-only investigation", async () => {
+  const timeline = [{
+    event_id: "archived-event",
+    occurred_at: "2026-01-01T10:00:00.000Z",
+    received_at: "2026-01-01T10:00:01.000Z",
+    tenant_id: "archive-tenant",
+    environment: "production",
+    service: "checkout-api",
+    source: "node_sdk" as const,
+    event_type: "checkout_failed",
+    severity: "error" as const,
+    attributes: { route: "/checkout" }
+  }];
+  const archived = {
+    incident_id: "archived-incident",
+    service: "checkout-api",
+    environment: "production",
+    state: "open",
+    started_at: timeline[0]!.occurred_at,
+    last_event_at: timeline[0]!.occurred_at,
+    event_count: 1,
+    leading_cause: "unknown",
+    confidence: "low",
+    investigation: { timeline, candidates: [], next_checks: ["Inspect the archived application logs."] }
+  };
+  const calls: string[] = [];
+  const archive = {
+    archivedIncidents: async (tenantId: string) => { calls.push(tenantId); return [archived]; },
+    archivedIncident: async (tenantId: string) => { calls.push(tenantId); return archived; }
+  };
+  const service = new DashboardService(
+    {} as never,
+    { tenantId: async () => "archive-tenant" } as never,
+    { available: () => true } as never,
+    archive as never
+  );
+
+  assert.equal((await service.archivedIncidents(undefined, {})).items[0]?.incident_id, "archived-incident");
+  const detail = await service.archivedIncident(undefined, "archived-incident");
+  assert.equal(detail?.archived, true);
+  assert.equal(detail?.ai_available, false);
+  assert.deepEqual(detail?.next_checks, ["Inspect the archived application logs."]);
+  assert.deepEqual(detail?.timeline.map((event) => event.event_id), ["archived-event"]);
+  assert.deepEqual(calls, ["archive-tenant", "archive-tenant"]);
 });
 
 test("dashboard exchanges a read key for a tenant-scoped secure session", { skip: !databaseUrl }, async () => {

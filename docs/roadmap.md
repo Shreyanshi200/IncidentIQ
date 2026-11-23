@@ -1,16 +1,26 @@
 # Release roadmap
 
-IncidentIQ is currently a single-operator, self-hosted incident intelligence platform. Version 0.8.2 is the latest completed product release. Completed changes are listed in the [changelog](../CHANGELOG.md).
+IncidentIQ is currently a single-operator, self-hosted incident intelligence platform. Version 0.9.0 is the latest completed product release. Completed changes are listed in the [changelog](../CHANGELOG.md).
 
 ## Planned releases
 
 | Version | Outcome |
 | --- | --- |
-| 0.9.0 | ClickHouse as an optional scalable store for historical evidence and investigations |
 | 0.9.1 | Kafka-based streaming ingestion for high-volume, near-real-time evidence delivery |
 | 1.0.0 | Stable single-operator release with clear setup, reliable integrations, operating guidance, and documented compatibility boundaries |
 
-The current PostgreSQL path remains the default while it is sufficient. Kafka and ClickHouse will be introduced as scale choices, not mandatory dependencies for every installation.
+The current PostgreSQL path remains the default while it is sufficient. ClickHouse was introduced in v0.9.0 and Kafka remains planned as an optional scale choice; neither is mandatory for every installation.
+
+## Recently completed
+
+### v0.9.0 — ClickHouse hot/cold tiering
+
+- Kept PostgreSQL as the transactional operational store and default deployment.
+- Added an optional ClickHouse archive for redacted source events and current incident snapshots.
+- Delivered archive work through a durable PostgreSQL outbox so ClickHouse downtime does not reject ingestion or lose accepted evidence.
+- Added positive archive confirmation before deletion, configurable automatic PostgreSQL hot retention, and archive/tiering state in the dashboard.
+- Added a tenant-scoped, read-only dashboard for filtering and inspecting archived ClickHouse incident snapshots without mixing them into active PostgreSQL results.
+- Added explicit backfill, queue-status, local testing, retention-boundary, and production configuration guidance.
 
 ## Future extensibility
 

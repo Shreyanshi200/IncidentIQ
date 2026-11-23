@@ -144,7 +144,8 @@ Open `http://localhost:5173`, paste the read key, and select **Open dashboard**.
 - Evidence-backed cross-service investigations that link service-local incidents only through shared traces or declared dependency failures.
 - Deterministic candidate ranking with supporting evidence, counterevidence, confidence, and contextual next checks.
 - Optional, operator-requested AI explanations with strict structured output, event-ID citations, cached results, and deterministic fallback.
-- React dashboard with Overview and Investigations views, filtering, cursor pagination, readable timelines, and secure read-key sessions.
+- React dashboard with Overview, active Investigations, and optional read-only Archived views, filtering, cursor pagination, readable timelines, and secure read-key sessions.
+- Optional ClickHouse hot/cold tiering with transactional outbox delivery, explicit archive confirmation, and tenant-scoped historical investigation access.
 - Navigable PDF incident reports containing the investigation summary, ranked candidates, compact service propagation, optional AI summary, validation plan, and complete chronological timeline.
 - Fail-open Node.js SDK and GitHub Action, plus a read-only Kubernetes collector and Alertmanager webhook integration.
 - CLI workflows for setup, evidence inspection, fixtures, correlation, and saved incidents.
@@ -163,6 +164,7 @@ flowchart LR
   API[IncidentIQ API<br/>authentication · validation · redaction]
   ENGINE[Incident engine<br/>grouping · deterministic ranking]
   DB[(PostgreSQL<br/>events · incidents · key hashes)]
+  CH[(ClickHouse<br/>optional historical archive)]
   DASH[Dashboard<br/>investigations · PDF reports]
   CLI[CLI<br/>setup · inspection]
 
@@ -172,6 +174,8 @@ flowchart LR
   AM --> API
   API --> ENGINE
   ENGINE --> DB
+  DB -.->|transactional outbox| CH
+  CH -->|archived investigations| API
   DASH -->|session-cookie request| API
   API -->|tenant-scoped data| DASH
   CLI -->|operator query| DB
@@ -259,6 +263,7 @@ The gallery follows the operator journey from secure login to a cited investigat
 | [AI explanations](docs/ai-explanations.md) | Optional OpenAI setup, evidence boundary, data handling, and production guidance |
 | [AI deep-dive test](docs/ai-deep-dive.md) | Rigorous 40-event, multi-service investigation and AI validation workflow |
 | [Cross-service correlation](docs/cross-service-correlation.md) | How IncidentIQ links service-local incidents through traces and declared dependencies |
+| [Optional ClickHouse archive](docs/clickhouse.md) | Durable historical event and incident archival for higher-volume installations |
 | [Automatic incidents](docs/automatic-incidents.md) | Incident opening, grouping, realistic fixtures, and current boundaries |
 | [Production deployment](docs/deployment/api-production.md) | HTTPS, PostgreSQL, static dashboard hosting, backups, upgrades, and rollback |
 | [Operations and guardrails](docs/operations.md) | API-key rotation, evidence retention, health probes, request limits, and AI budgets |

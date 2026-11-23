@@ -2,6 +2,15 @@
 
 Notable IncidentIQ changes are recorded here. Planned work belongs in the [release roadmap](docs/roadmap.md), not in the completed release history.
 
+## 0.9.0 - ClickHouse hot/cold tiering
+
+- Added an optional ClickHouse archive for redacted source events and current incident snapshots while keeping PostgreSQL as the mandatory transactional store.
+- Added durable PostgreSQL outbox delivery with bounded retries so ClickHouse downtime does not reject ingestion or lose accepted evidence.
+- Added explicit archive confirmation and configurable PostgreSQL hot retention that prunes only successfully archived records.
+- Added archive backfill, queue-status, and confirmed-discard CLI operations for safe adoption and recovery.
+- Added tenant-scoped read-only Archived investigations with filters, cursor pagination, stored analysis, and complete evidence timelines.
+- Added storage-tier and delivery-queue visibility to the dashboard, plus setup, production, retention, and failure-recovery guidance.
+
 ## 0.8.2 - Cross-service evidence correlation
 
 - Linked service-local incidents only through shared traces or recorded dependency failures within the same tenant, environment, and evidence window.

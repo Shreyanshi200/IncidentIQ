@@ -43,6 +43,7 @@ interface SourceEventsTable {
   resource: string | null;
   attributes: Record<string, unknown>;
   created_at: Generated<string>;
+  clickhouse_archived_at: Generated<string | null>;
 }
 
 interface IncidentsTable {
@@ -58,6 +59,7 @@ interface IncidentsTable {
   confidence: string;
   investigation: CorrelationResult;
   updated_at: Generated<string>;
+  clickhouse_archived_at: Generated<string | null>;
 }
 
 interface IncidentEventsTable {
@@ -76,6 +78,16 @@ interface ApiKeysTable {
   created_at: Generated<string>;
   expires_at: string | null;
   revoked_at: string | null;
+}
+
+interface ClickHouseArchiveOutboxTable {
+  record_type: "event" | "incident";
+  record_id: string;
+  tenant_id: string;
+  queued_at: Generated<string>;
+  next_attempt_at: Generated<string>;
+  attempt_count: Generated<number>;
+  last_error: string | null;
 }
 
 export interface ApiKeySummary {
@@ -97,6 +109,12 @@ export interface RetentionResult {
   deleted: boolean;
 }
 
+export interface ArchiveStatus {
+  queued: number;
+  retrying: number;
+  oldest_queued_at: string | null;
+}
+
 interface SchemaMigrationsTable {
   version: string;
   applied_at: Generated<string>;
@@ -107,6 +125,7 @@ interface Database {
   incidents: IncidentsTable;
   incident_events: IncidentEventsTable;
   api_keys: ApiKeysTable;
+  clickhouse_archive_outbox: ClickHouseArchiveOutboxTable;
   schema_migrations: SchemaMigrationsTable;
 }
 
@@ -167,10 +186,67 @@ export async function listEvents(db: Kysely<Database>): Promise<StoredEvent[]> {
 
 export async function clearTenantData(db: Kysely<Database>, tenantId: string): Promise<{ incidents: number; events: number }> {
   return db.transaction().execute(async (transaction) => {
+    await transaction.deleteFrom("clickhouse_archive_outbox").where("tenant_id", "=", tenantId).execute();
     const incidents = await transaction.deleteFrom("incidents").where("tenant_id", "=", tenantId).returning("incident_id").execute();
     const events = await transaction.deleteFrom("source_events").where("tenant_id", "=", tenantId).returning("event_id").execute();
     return { incidents: incidents.length, events: events.length };
   });
+}
+
+export async function queueArchiveBackfill(db: Kysely<Database>, tenantId?: string): Promise<{ events: number; incidents: number }> {
+  return db.transaction().execute(async (transaction) => {
+    let events = transaction.selectFrom("source_events").select([
+      sql<"event">`'event'`.as("record_type"),
+      "event_id as record_id",
+      "tenant_id"
+    ]).where("clickhouse_archived_at", "is", null);
+    let incidents = transaction.selectFrom("incidents").select([
+      sql<"incident">`'incident'`.as("record_type"),
+      "incident_id as record_id",
+      "tenant_id"
+    ]).where("clickhouse_archived_at", "is", null);
+    if (tenantId) {
+      events = events.where("tenant_id", "=", tenantId);
+      incidents = incidents.where("tenant_id", "=", tenantId);
+    }
+    const eventRows = await transaction
+      .insertInto("clickhouse_archive_outbox")
+      .columns(["record_type", "record_id", "tenant_id"])
+      .expression(events)
+      .onConflict((conflict) => conflict.columns(["record_type", "record_id"]).doNothing())
+      .returning("record_id")
+      .execute();
+    const incidentRows = await transaction
+      .insertInto("clickhouse_archive_outbox")
+      .columns(["record_type", "record_id", "tenant_id"])
+      .expression(incidents)
+      .onConflict((conflict) => conflict.columns(["record_type", "record_id"]).doUpdateSet({
+        next_attempt_at: new Date().toISOString(),
+        attempt_count: 0,
+        last_error: null
+      }))
+      .returning("record_id")
+      .execute();
+    return { events: eventRows.length, incidents: incidentRows.length };
+  });
+}
+
+export async function archiveStatus(db: Kysely<Database>, tenantId?: string): Promise<ArchiveStatus> {
+  let query = db
+    .selectFrom("clickhouse_archive_outbox")
+    .select(({ fn }) => [
+      fn.countAll<string>().as("queued"),
+      fn.count<string>("record_id").filterWhere("attempt_count", ">", 0).as("retrying"),
+      fn.min<string>("queued_at").as("oldest_queued_at")
+    ]);
+  if (tenantId) query = query.where("tenant_id", "=", tenantId);
+  const row = await query.executeTakeFirstOrThrow();
+  return { queued: Number(row.queued), retrying: Number(row.retrying), oldest_queued_at: row.oldest_queued_at };
+}
+
+export async function discardArchiveQueue(db: Kysely<Database>, tenantId: string): Promise<number> {
+  const deleted = await db.deleteFrom("clickhouse_archive_outbox").where("tenant_id", "=", tenantId).returning("record_id").execute();
+  return deleted.length;
 }
 
 export async function saveInvestigation(db: Kysely<Database>, result: CorrelationResult): Promise<IncidentSummary> {
@@ -282,27 +358,33 @@ export async function revokeApiKey(db: Kysely<Database>, keyId: string, tenantId
   } : undefined;
 }
 
-export async function pruneTenantData(db: Kysely<Database>, tenantId: string, cutoff: string, confirm = false): Promise<RetentionResult> {
+export async function pruneTenantData(db: Kysely<Database>, tenantId: string, cutoff: string, confirm = false, requireArchived = Boolean(process.env.CLICKHOUSE_URL?.trim())): Promise<RetentionResult> {
   return db.transaction().execute(async (transaction) => {
-    const expiredIncidents = await transaction
+    const pendingIncidents = transaction.selectFrom("clickhouse_archive_outbox").select("record_id").where("record_type", "=", "incident");
+    const pendingEvents = transaction.selectFrom("clickhouse_archive_outbox").select("record_id").where("record_type", "=", "event");
+    let expiredIncidentQuery = transaction
       .selectFrom("incidents")
       .select(({ fn }) => fn.countAll<string>().as("count"))
       .where("tenant_id", "=", tenantId)
       .where("last_event_at", "<", cutoff)
-      .executeTakeFirstOrThrow();
+      .where("incident_id", "not in", pendingIncidents);
+    if (requireArchived) expiredIncidentQuery = expiredIncidentQuery.where("clickhouse_archived_at", "is not", null);
+    const expiredIncidents = await expiredIncidentQuery.executeTakeFirstOrThrow();
     const retainedEventIds = transaction
       .selectFrom("incident_events")
       .innerJoin("incidents", "incidents.incident_id", "incident_events.incident_id")
       .select("incident_events.event_id")
       .where("incidents.tenant_id", "=", tenantId)
       .where("incidents.last_event_at", ">=", cutoff);
-    const expiredEvents = await transaction
+    let expiredEventQuery = transaction
       .selectFrom("source_events")
       .select(({ fn }) => fn.countAll<string>().as("count"))
       .where("tenant_id", "=", tenantId)
       .where("occurred_at", "<", cutoff)
       .where("event_id", "not in", retainedEventIds)
-      .executeTakeFirstOrThrow();
+      .where("event_id", "not in", pendingEvents);
+    if (requireArchived) expiredEventQuery = expiredEventQuery.where("clickhouse_archived_at", "is not", null);
+    const expiredEvents = await expiredEventQuery.executeTakeFirstOrThrow();
 
     const result: RetentionResult = {
       tenant_id: tenantId,
@@ -313,13 +395,17 @@ export async function pruneTenantData(db: Kysely<Database>, tenantId: string, cu
     };
     if (!confirm) return result;
 
-    const deletedIncidents = await transaction.deleteFrom("incidents").where("tenant_id", "=", tenantId).where("last_event_at", "<", cutoff).executeTakeFirst();
-    const deletedEvents = await transaction
+    let deleteIncidentQuery = transaction.deleteFrom("incidents").where("tenant_id", "=", tenantId).where("last_event_at", "<", cutoff).where("incident_id", "not in", pendingIncidents);
+    if (requireArchived) deleteIncidentQuery = deleteIncidentQuery.where("clickhouse_archived_at", "is not", null);
+    const deletedIncidents = await deleteIncidentQuery.executeTakeFirst();
+    let deleteEventQuery = transaction
       .deleteFrom("source_events")
       .where("tenant_id", "=", tenantId)
       .where("occurred_at", "<", cutoff)
       .where("event_id", "not in", transaction.selectFrom("incident_events").select("event_id"))
-      .executeTakeFirst();
+      .where("event_id", "not in", pendingEvents);
+    if (requireArchived) deleteEventQuery = deleteEventQuery.where("clickhouse_archived_at", "is not", null);
+    const deletedEvents = await deleteEventQuery.executeTakeFirst();
     return { ...result, incidents: Number(deletedIncidents.numDeletedRows), events: Number(deletedEvents.numDeletedRows) };
   });
 }

@@ -54,11 +54,16 @@ Edit `~/incidentiq-production/.env`. Replace all placeholders:
 - `INCIDENTIQ_INCIDENT_GAP_MINUTES` — positive minutes of inactivity after which a matching error starts a new incident, normally `10`;
 - `INCIDENTIQ_CONTEXT_LOOKBACK_MINUTES` — positive minutes of preceding evidence included and evaluated for cause correlation, normally `10`;
 - optional `OPENAI_API_KEY` and `INCIDENTIQ_AI_MODEL` — set both only when your data policy permits OpenAI to process selected incident evidence; and
+- optional `CLICKHOUSE_URL`, database, and credentials — set these only when a separately operated ClickHouse archive is justified by measured historical volume; and
 - the request, session, and AI guardrail values — keep the checked-in defaults unless your measured workload requires a bounded change;
 - `NODE_ENV` — keep this as `production` so the API requires a stable session secret and emits structured request logs; and
 - `PORT` — normally leave this as `3000`.
 
 Keep `.env` readable only by the deployment operator. It contains the database password.
+
+When ClickHouse is enabled, its password is also contained in this file. The API sends archived records asynchronously, so ClickHouse is not part of the readiness probe and temporary archive downtime does not reject ingestion. Follow the [ClickHouse guide](../clickhouse.md) for backfill, queue monitoring, retention ownership, and verification before pruning PostgreSQL data.
+
+Do not enable `INCIDENTIQ_POSTGRES_HOT_RETENTION_DAYS` on the first ClickHouse startup. Backfill existing tenants, confirm `archive status` reaches zero, verify representative events and incidents in ClickHouse, and only then enable a conservative hot window and restart the API.
 
 Generate the server-only dashboard session secret on a trusted machine:
 

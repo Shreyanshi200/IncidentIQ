@@ -1,12 +1,13 @@
 import { ConflictException, Injectable } from "@nestjs/common";
 import { createHash } from "node:crypto";
 import { sql } from "kysely";
-import { type IncidentFixture, type NormalizedEvent } from "@incidentiqhq/event-schema";
+import { type IncidentFixture, type NormalizedEvent, validateEvent } from "@incidentiqhq/event-schema";
 import { correlate, crossServiceLinks, type CrossServiceLink } from "@incidentiqhq/correlation";
 import { DatabaseService } from "./database.js";
 import { DashboardSessionService } from "./dashboard-session.service.js";
 import { createIncidentReportPdf } from "./incident-report.js";
 import { AiExplanationService, type AiExplanation, storedAiExplanation } from "./ai-explanation.service.js";
+import { ClickHouseArchiveService, clickHouseConfig, type ArchivedIncidentFilters } from "./clickhouse-archive.service.js";
 
 export interface DashboardIncidentFilters {
   service?: string;
@@ -78,6 +79,7 @@ export interface DashboardIncidentDetail extends DashboardIncident {
   ai_available: boolean;
   ai_explanation?: AiExplanation;
   cross_service?: DashboardCrossServiceContext;
+  archived?: boolean;
 }
 
 export interface DashboardCrossServiceContext {
@@ -95,6 +97,14 @@ export interface DashboardOverview {
   services: Array<{ service: string; environments: string[]; event_count: number; last_event_at: string; sources: string[] }>;
   environments: Array<{ environment: string; service_count: number; event_count: number; last_event_at: string }>;
   integrations: Array<{ source: string; event_count: number; recent_event_count: number; last_event_at: string }>;
+  archive: {
+    enabled: boolean;
+    tiering_enabled: boolean;
+    hot_retention_days?: number;
+    queued_records: number;
+    retrying_records: number;
+    oldest_queued_at?: string;
+  };
 }
 
 function mostRecent(left: string, right: string): string {
@@ -186,14 +196,15 @@ export class DashboardService {
   constructor(
     private readonly database: DatabaseService,
     private readonly sessions: DashboardSessionService,
-    private readonly ai: AiExplanationService
+    private readonly ai: AiExplanationService,
+    private readonly archive: ClickHouseArchiveService
   ) {}
 
   async overview(cookie: string | undefined): Promise<DashboardOverview> {
     const tenantId = await this.sessions.tenantId(cookie);
 
     // shortcut: aggregate source_events directly; add tenant rollups when evidence volume outgrows a single operator.
-    const [serviceRows, environments, integrations] = await Promise.all([
+    const [serviceRows, environments, integrations, archiveQueue] = await Promise.all([
       this.database.db
         .selectFrom("source_events")
         .select([
@@ -231,8 +242,18 @@ export class DashboardService {
         .where("tenant_id", "=", tenantId)
         .groupBy("source")
         .orderBy("source")
-        .execute()
+        .execute(),
+      this.database.db
+        .selectFrom("clickhouse_archive_outbox")
+        .select(({ fn }) => [
+          fn.countAll<string>().as("queued"),
+          fn.count<string>("record_id").filterWhere("attempt_count", ">", 0).as("retrying"),
+          fn.min<string>("queued_at").as("oldest_queued_at")
+        ])
+        .where("tenant_id", "=", tenantId)
+        .executeTakeFirstOrThrow()
     ]);
+    const archiveConfig = clickHouseConfig();
 
     const groupedServices = new Map<string, DashboardOverview["services"][number]>();
     for (const row of serviceRows) {
@@ -257,7 +278,15 @@ export class DashboardService {
     return {
       services: [...groupedServices.values()],
       environments: environments.map((row) => ({ ...row, service_count: Number(row.service_count), event_count: Number(row.event_count), last_event_at: isoTimestamp(row.last_event_at) })),
-      integrations: integrations.map((row) => ({ ...row, event_count: Number(row.event_count), recent_event_count: Number(row.recent_event_count), last_event_at: isoTimestamp(row.last_event_at) }))
+      integrations: integrations.map((row) => ({ ...row, event_count: Number(row.event_count), recent_event_count: Number(row.recent_event_count), last_event_at: isoTimestamp(row.last_event_at) })),
+      archive: {
+        enabled: Boolean(archiveConfig),
+        tiering_enabled: Boolean(archiveConfig?.hotRetentionDays),
+        ...(archiveConfig?.hotRetentionDays ? { hot_retention_days: archiveConfig.hotRetentionDays } : {}),
+        queued_records: Number(archiveQueue.queued),
+        retrying_records: Number(archiveQueue.retrying),
+        ...(archiveQueue.oldest_queued_at ? { oldest_queued_at: isoTimestamp(archiveQueue.oldest_queued_at) } : {})
+      }
     };
   }
 
@@ -302,6 +331,44 @@ export class DashboardService {
     return {
       items,
       ...(rows.length > INCIDENT_PAGE_SIZE && last ? { next_cursor: this.cursor(last) } : {})
+    };
+  }
+
+  async archivedIncidents(
+    cookie: string | undefined,
+    filters: ArchivedIncidentFilters,
+    cursor?: DashboardIncidentCursor
+  ): Promise<DashboardIncidentPage> {
+    const tenantId = await this.sessions.tenantId(cookie);
+    const rows = await this.archive.archivedIncidents(tenantId, filters, cursor, INCIDENT_PAGE_SIZE + 1);
+    const items = rows.slice(0, INCIDENT_PAGE_SIZE).map((row) => this.summary(row));
+    const last = items.at(-1);
+    return {
+      items,
+      ...(rows.length > INCIDENT_PAGE_SIZE && last ? { next_cursor: this.cursor(last) } : {})
+    };
+  }
+
+  async archivedIncident(cookie: string | undefined, incidentId: string): Promise<DashboardIncidentDetail | undefined> {
+    const tenantId = await this.sessions.tenantId(cookie);
+    const row = await this.archive.archivedIncident(tenantId, incidentId);
+    if (!row) return undefined;
+    const rawTimeline = record(row.investigation)?.timeline;
+    const timeline = Array.isArray(rawTimeline) ? rawTimeline.flatMap((value) => {
+      if (!validateEvent(value).valid) return [];
+      const { received_at: _receivedAt, tenant_id: _tenantId, ...event } = value as NormalizedEvent;
+      return [event];
+    }).sort((left, right) => Date.parse(left.occurred_at) - Date.parse(right.occurred_at) || left.event_id.localeCompare(right.event_id)) : [];
+    const eventIds = new Set(timeline.map((event) => event.event_id));
+    const aiExplanation = storedAiExplanation(record(row.investigation)?.ai_explanation, eventIds);
+    return {
+      ...this.summary(row),
+      brief: this.brief(row.leading_cause, row.confidence, row.investigation, timeline),
+      timeline,
+      next_checks: this.nextChecks(row.investigation),
+      ai_available: false,
+      archived: true,
+      ...(aiExplanation ? { ai_explanation: aiExplanation } : {})
     };
   }
 

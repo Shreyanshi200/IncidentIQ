@@ -19,6 +19,7 @@ interface SourceEventsTable {
   trace_id: string | null;
   resource: string | null;
   attributes: unknown;
+  clickhouse_archived_at: Generated<string | null>;
 }
 
 interface IncidentsTable {
@@ -34,6 +35,7 @@ interface IncidentsTable {
   confidence: string;
   investigation: unknown;
   updated_at: Generated<string>;
+  clickhouse_archived_at: Generated<string | null>;
 }
 
 interface IncidentEventsTable {
@@ -54,11 +56,22 @@ interface ApiKeysTable {
   revoked_at: string | null;
 }
 
+export interface ClickHouseArchiveOutboxTable {
+  record_type: "event" | "incident";
+  record_id: string;
+  tenant_id: string;
+  queued_at: Generated<string>;
+  next_attempt_at: Generated<string>;
+  attempt_count: Generated<number>;
+  last_error: string | null;
+}
+
 export interface Database {
   source_events: SourceEventsTable;
   incidents: IncidentsTable;
   incident_events: IncidentEventsTable;
   api_keys: ApiKeysTable;
+  clickhouse_archive_outbox: ClickHouseArchiveOutboxTable;
 }
 
 export function databaseEnvPaths(cwd = process.cwd()): string[] {

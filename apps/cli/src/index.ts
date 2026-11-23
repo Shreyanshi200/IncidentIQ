@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { correlate } from "@incidentiqhq/correlation";
 import { SCHEMA_VERSION, type IncidentFixture, validateFixture } from "@incidentiqhq/event-schema";
-import { applyMigrations, clearTenantData, createApiKey, createDatabase, getIncident, listApiKeys, listEvents, listIncidents, loadFixture, pruneTenantData, revokeApiKey, saveInvestigation } from "./database.js";
+import { applyMigrations, archiveStatus, clearTenantData, createApiKey, createDatabase, discardArchiveQueue, getIncident, listApiKeys, listEvents, listIncidents, loadFixture, pruneTenantData, queueArchiveBackfill, revokeApiKey, saveInvestigation } from "./database.js";
 import { formatIncidentList, formatInvestigation } from "./format.js";
 
 const args = process.argv.slice(2);
@@ -89,7 +89,7 @@ async function ingestFixture(file: string): Promise<void> {
 
 try {
   if (command === "version") {
-    console.log(`incidentiq 0.8.2 (schema ${SCHEMA_VERSION})`);
+    console.log(`incidentiq 0.9.0 (schema ${SCHEMA_VERSION})`);
   } else if (command === "api" && subcommand === "start") {
     const api = spawn(process.execPath, [fileURLToPath(new URL("../../../api/dist/src/main.js", import.meta.url))], { stdio: "inherit", env: process.env });
     await new Promise<void>((resolveStart, rejectStart) => api.once("exit", (code) => code === 0 ? resolveStart() : rejectStart(new Error(`API exited with code ${code}`))));
@@ -133,6 +133,17 @@ try {
       console.log(`${result.deleted ? "Deleted" : "Dry run"}: ${result.incidents} incidents and ${result.events} unretained events for tenant ${selectedTenant} older than ${result.cutoff}. API keys were preserved.`);
       if (!result.deleted) console.log("Run the same command with --confirm to delete these records.");
     });
+  } else if (command === "archive" && subcommand === "backfill") {
+    const selectedTenant = hasFlag("--tenant") ? tenantId(flag("--tenant")) : undefined;
+    await withDatabase(async (database) => {
+      const queued = await queueArchiveBackfill(database, selectedTenant);
+      console.log(`Queued ${queued.events} events and ${queued.incidents} incident snapshots for ClickHouse archival${selectedTenant ? ` in tenant ${selectedTenant}` : ""}.`);
+    });
+  } else if (command === "archive" && subcommand === "status") {
+    await withDatabase(async (database) => console.log(JSON.stringify(await archiveStatus(database, hasFlag("--tenant") ? tenantId(flag("--tenant")) : undefined), null, 2)));
+  } else if (command === "archive" && subcommand === "discard" && flag("--tenant") && hasFlag("--confirm")) {
+    const selectedTenant = tenantId(flag("--tenant"));
+    await withDatabase(async (database) => console.log(`Discarded ${await discardArchiveQueue(database, selectedTenant)} pending ClickHouse archive records for tenant ${selectedTenant}. PostgreSQL and delivered ClickHouse data were unchanged.`));
   } else if (command === "fixture" && subcommand === "validate" && target) {
     console.log(`Valid fixture: ${(await readFixture(target)).fixture_id}`);
   } else if (command === "fixture" && subcommand === "load" && target) {
@@ -169,7 +180,7 @@ try {
       console.log(JSON.stringify(incident.investigation, null, 2));
     });
   } else {
-    throw new Error("Usage: incidentiq version | api start | api health | keys create --scope ingest|read [--tenant <tenant>] [--label <label>] [--expires-in-days <days>] | keys list [--tenant <tenant>] | keys revoke <key-id> [--tenant <tenant>] --confirm | init | data clear --tenant <tenant> --confirm | data prune --tenant <tenant> --older-than <90d|24h> [--confirm] | fixture validate <file> | fixture load <file> | fixture ingest <file> [--tenant <tenant>] | correlate <fixture> [--save] | events list | incidents list [--tenant <tenant>] | incidents explain <id> | incidents export <id> --format json");
+    throw new Error("Usage: incidentiq version | api start | api health | keys create --scope ingest|read [--tenant <tenant>] [--label <label>] [--expires-in-days <days>] | keys list [--tenant <tenant>] | keys revoke <key-id> [--tenant <tenant>] --confirm | init | data clear --tenant <tenant> --confirm | data prune --tenant <tenant> --older-than <90d|24h> [--confirm] | archive backfill [--tenant <tenant>] | archive status [--tenant <tenant>] | archive discard --tenant <tenant> --confirm | fixture validate <file> | fixture load <file> | fixture ingest <file> [--tenant <tenant>] | correlate <fixture> [--save] | events list | incidents list [--tenant <tenant>] | incidents explain <id> | incidents export <id> --format json");
   }
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error));

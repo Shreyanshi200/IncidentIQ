@@ -7,3 +7,23 @@ services:
       POSTGRES_PASSWORD: incidentiq
     ports:
       - "5432:5432"
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.8.40.7-alpine
+    profiles: ["scale"]
+    environment:
+      CLICKHOUSE_DB: incidentiq
+      CLICKHOUSE_USER: incidentiq
+      CLICKHOUSE_PASSWORD: incidentiq
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    ports:
+      - "127.0.0.1:8123:8123"
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--user", "incidentiq", "--password", "incidentiq", "--query", "SELECT 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  clickhouse-data:

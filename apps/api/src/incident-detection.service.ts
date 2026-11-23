@@ -74,7 +74,7 @@ export class IncidentDetectionService {
   }
 
   // shortcut: detection is evaluated per accepted event; batch it when high-volume ingestion is introduced.
-  async detect(event: NormalizedEvent, db: Kysely<Database> = this.database.db): Promise<void> {
+  async detect(event: NormalizedEvent, db: Kysely<Database> = this.database.db): Promise<string | undefined> {
     const eventAt = timestamp(event.occurred_at);
     const nearbyIncident = await db
       .selectFrom("incidents")
@@ -88,7 +88,7 @@ export class IncidentDetectionService {
       .orderBy("last_event_at", "desc")
       .executeTakeFirst();
 
-    if (!nearbyIncident && !isIncidentSignal(event)) return;
+    if (!nearbyIncident && !isIncidentSignal(event)) return undefined;
 
     const id = nearbyIncident?.incident_id ?? incidentId(event);
     const startedAt = nearbyIncident?.started_at ?? event.occurred_at;
@@ -141,5 +141,6 @@ export class IncidentDetectionService {
       .values(timeline.map((item) => ({ incident_id: id, event_id: item.event_id })))
       .onConflict((conflict) => conflict.columns(["incident_id", "event_id"]).doNothing())
       .execute();
+    return id;
   }
 }

@@ -6,6 +6,7 @@ interface DashboardOverview {
   services: Array<{ service: string; environments: string[]; event_count: number; last_event_at: string; sources: string[] }>;
   environments: Array<{ environment: string; service_count: number; event_count: number; last_event_at: string }>;
   integrations: Array<{ source: string; event_count: number; recent_event_count: number; last_event_at: string }>;
+  archive: { enabled: boolean; tiering_enabled: boolean; hot_retention_days?: number; queued_records: number; retrying_records: number; oldest_queued_at?: string };
 }
 
 interface DashboardIncident {
@@ -55,6 +56,7 @@ interface DashboardIncidentDetail extends DashboardIncident {
     services: Array<{ service: string; event_count: number; role: "primary" | "linked" }>;
     links: Array<{ from_service: string; to_service: string; reason: "shared_trace" | "declared_dependency"; evidence_ids: string[]; trace_id?: string }>;
   };
+  archived?: boolean;
 }
 
 interface GroupedCrossServiceLink {
@@ -82,11 +84,20 @@ interface IncidentFilters {
   source: string;
 }
 
-type DashboardView = "overview" | "investigations" | "detail";
+interface ArchiveFilters {
+  service: string;
+  environment: string;
+  cause: string;
+  from: string;
+  to: string;
+}
+
+type DashboardView = "overview" | "investigations" | "detail" | "archive" | "archive-detail";
 type IncidentTab = "analysis" | "evidence" | "ai";
 
 const apiBaseUrl = (import.meta.env.VITE_INCIDENTIQ_API_URL ?? "").replace(/\/$/, "");
 const emptyFilters: IncidentFilters = { service: "", environment: "", source: "" };
+const emptyArchiveFilters: ArchiveFilters = { service: "", environment: "", cause: "", from: "", to: "" };
 
 function formatDate(value: string): string {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
@@ -242,12 +253,38 @@ function incidentUrl(filters: IncidentFilters, cursor?: string): string {
   return `/v1/dashboard/incidents${query ? `?${query}` : ""}`;
 }
 
+function archiveUrl(filters: ArchiveFilters, cursor?: string): string {
+  const search = new URLSearchParams();
+  if (filters.service) search.set("service", filters.service);
+  if (filters.environment) search.set("environment", filters.environment);
+  if (filters.cause) search.set("cause", filters.cause);
+  if (filters.from) search.set("from", new Date(`${filters.from}T00:00:00.000Z`).toISOString());
+  if (filters.to) {
+    const exclusiveEnd = new Date(`${filters.to}T00:00:00.000Z`);
+    exclusiveEnd.setUTCDate(exclusiveEnd.getUTCDate() + 1);
+    search.set("to", exclusiveEnd.toISOString());
+  }
+  if (cursor) search.set("cursor", cursor);
+  const query = search.toString();
+  return `/v1/dashboard/archive/incidents${query ? `?${query}` : ""}`;
+}
+
 function incidentRouteFromHash(): { incidentId: string; tab: IncidentTab } | undefined {
   const match = window.location.hash.match(/^#incidents\/([^/]+)(?:\/(analysis|evidence|ai-review))?$/);
   if (!match?.[1]) return undefined;
   try {
     const tab = match[2] === "evidence" ? "evidence" : match[2] === "ai-review" ? "ai" : "analysis";
     return { incidentId: decodeURIComponent(match[1]), tab };
+  } catch {
+    return undefined;
+  }
+}
+
+function archiveRouteFromHash(): { incidentId: string; tab: IncidentTab } | undefined {
+  const match = window.location.hash.match(/^#archive\/([^/]+)(?:\/(analysis|evidence|ai-review))?$/);
+  if (!match?.[1]) return undefined;
+  try {
+    return { incidentId: decodeURIComponent(match[1]), tab: match[2] === "evidence" ? "evidence" : match[2] === "ai-review" ? "ai" : "analysis" };
   } catch {
     return undefined;
   }
@@ -262,7 +299,7 @@ function incidentTabPath(tab: IncidentTab): string {
 }
 
 function initialView(): DashboardView {
-  return incidentIdFromHash() ? "detail" : window.location.hash === "#investigations" ? "investigations" : "overview";
+  return archiveRouteFromHash() ? "archive-detail" : window.location.hash === "#archive" ? "archive" : incidentIdFromHash() ? "detail" : window.location.hash === "#investigations" ? "investigations" : "overview";
 }
 
 function App() {
@@ -271,6 +308,9 @@ function App() {
   const [incidents, setIncidents] = useState<DashboardIncident[]>([]);
   const [nextCursor, setNextCursor] = useState<string>();
   const [filters, setFilters] = useState<IncidentFilters>(emptyFilters);
+  const [archivedIncidents, setArchivedIncidents] = useState<DashboardIncident[]>([]);
+  const [archiveCursor, setArchiveCursor] = useState<string>();
+  const [archiveFilters, setArchiveFilters] = useState<ArchiveFilters>(emptyArchiveFilters);
   const [selectedIncident, setSelectedIncident] = useState<DashboardIncidentDetail>();
   const [view, setView] = useState<DashboardView>(initialView);
   const [detailTab, setDetailTab] = useState<IncidentTab>(() => incidentRouteFromHash()?.tab ?? "analysis");
@@ -284,8 +324,12 @@ function App() {
 
   function navigate(nextView: DashboardView, incidentId?: string, tab: IncidentTab = "analysis"): void {
     setView(nextView);
-    if (nextView === "detail") setDetailTab(tab);
-    const hash = nextView === "detail" && incidentId ? `#incidents/${encodeURIComponent(incidentId)}/${incidentTabPath(tab)}` : `#${nextView}`;
+    if (nextView === "detail" || nextView === "archive-detail") setDetailTab(tab);
+    const hash = nextView === "detail" && incidentId
+      ? `#incidents/${encodeURIComponent(incidentId)}/${incidentTabPath(tab)}`
+      : nextView === "archive-detail" && incidentId
+        ? `#archive/${encodeURIComponent(incidentId)}/${incidentTabPath(tab)}`
+        : `#${nextView}`;
     window.history.replaceState(null, "", hash);
     window.scrollTo({ top: 0, behavior: "auto" });
   }
@@ -293,12 +337,13 @@ function App() {
   function selectDetailTab(tab: IncidentTab): void {
     if (!selectedIncident) return;
     setDetailTab(tab);
-    window.history.replaceState(null, "", `#incidents/${encodeURIComponent(selectedIncident.incident_id)}/${incidentTabPath(tab)}`);
+    const prefix = selectedIncident.archived ? "archive" : "incidents";
+    window.history.replaceState(null, "", `#${prefix}/${encodeURIComponent(selectedIncident.incident_id)}/${incidentTabPath(tab)}`);
   }
 
   async function request<T>(path: string): Promise<T> {
     const response = await fetch(`${apiBaseUrl}${path}`, { credentials: "same-origin" });
-    if (!response.ok) throw new Error(response.status === 401 ? "Your dashboard session expired." : response.status === 404 ? "That incident is no longer available." : "The dashboard could not load.");
+    if (!response.ok) throw new Error(response.status === 401 ? "Your dashboard session expired." : response.status === 404 ? "That incident is no longer available." : path.startsWith("/v1/dashboard/archive/") ? "Archived investigations are temporarily unavailable. Check the ClickHouse connection." : "The dashboard could not load.");
     return response.json() as Promise<T>;
   }
 
@@ -313,22 +358,39 @@ function App() {
     setRefreshedAt(new Date());
   }
 
+  async function loadArchive(nextFilters = emptyArchiveFilters, cursor?: string): Promise<DashboardIncidentPage> {
+    return request<DashboardIncidentPage>(archiveUrl(nextFilters, cursor));
+  }
+
   useEffect(() => {
     let active = true;
     void (async () => {
       try {
         await loadDashboard();
-        const incidentId = incidentIdFromHash();
-        if (!incidentId) return;
-        const incident = await request<DashboardIncidentDetail>(`/v1/dashboard/incidents/${encodeURIComponent(incidentId)}`);
+        const archivedRoute = archiveRouteFromHash();
+        const incidentId = archivedRoute?.incidentId ?? incidentIdFromHash();
+        if (!incidentId) {
+          if (window.location.hash === "#archive") {
+            const page = await loadArchive();
+            if (!active) return;
+            setArchivedIncidents(page.items);
+            setArchiveCursor(page.next_cursor);
+            setView("archive");
+          }
+          return;
+        }
+        const incident = await request<DashboardIncidentDetail>(archivedRoute
+          ? `/v1/dashboard/archive/incidents/${encodeURIComponent(incidentId)}`
+          : `/v1/dashboard/incidents/${encodeURIComponent(incidentId)}`);
         if (!active) return;
         setSelectedIncident(incident);
-        setDetailTab(incidentRouteFromHash()?.tab ?? "analysis");
-        setView("detail");
+        const requestedTab = archivedRoute?.tab ?? incidentRouteFromHash()?.tab ?? "analysis";
+        setDetailTab(incident.archived && requestedTab === "ai" && !incident.ai_explanation ? "analysis" : requestedTab);
+        setView(archivedRoute ? "archive-detail" : "detail");
       } catch (reason) {
-        if (active && incidentIdFromHash()) {
+        if (active && (incidentIdFromHash() || archiveRouteFromHash())) {
           setError(reason instanceof Error ? reason.message : "The incident could not load.");
-          navigate("investigations");
+          navigate(archiveRouteFromHash() ? "archive" : "investigations");
         }
       } finally {
         if (active) setCheckingSession(false);
@@ -342,19 +404,29 @@ function App() {
     setError("");
     try {
       await loadDashboard(filters);
-      const incidentId = selectedIncident?.incident_id ?? incidentIdFromHash();
+      if (view === "archive") {
+        const page = await loadArchive(archiveFilters);
+        setArchivedIncidents(page.items);
+        setArchiveCursor(page.next_cursor);
+      }
+      const archived = view === "archive-detail" || selectedIncident?.archived;
+      const incidentId = selectedIncident?.incident_id ?? archiveRouteFromHash()?.incidentId ?? incidentIdFromHash();
       if (incidentId) {
-        const incident = await request<DashboardIncidentDetail>(`/v1/dashboard/incidents/${encodeURIComponent(incidentId)}`);
+        const incident = await request<DashboardIncidentDetail>(archived
+          ? `/v1/dashboard/archive/incidents/${encodeURIComponent(incidentId)}`
+          : `/v1/dashboard/incidents/${encodeURIComponent(incidentId)}`);
         setSelectedIncident(incident);
-        setView("detail");
+        setView(archived ? "archive-detail" : "detail");
       } else {
         setSelectedIncident(undefined);
       }
     } catch (reason) {
-      setOverview(undefined);
-      setIncidents([]);
-      setNextCursor(undefined);
-      setSelectedIncident(undefined);
+      if (view !== "archive" && view !== "archive-detail") {
+        setOverview(undefined);
+        setIncidents([]);
+        setNextCursor(undefined);
+        setSelectedIncident(undefined);
+      }
       setError(reason instanceof Error ? reason.message : "The dashboard could not load.");
     } finally {
       setLoading(false);
@@ -414,6 +486,81 @@ function App() {
       setSelectedIncident(undefined);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "The incident list could not load.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function openArchiveView(): Promise<void> {
+    navigate("archive");
+    setLoading(true);
+    setError("");
+    try {
+      const page = await loadArchive(archiveFilters);
+      setArchivedIncidents(page.items);
+      setArchiveCursor(page.next_cursor);
+      setSelectedIncident(undefined);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "The archive could not load. ClickHouse may be unavailable.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function applyArchiveFilters(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    setLoading(true);
+    setError("");
+    try {
+      const page = await loadArchive(archiveFilters);
+      setArchivedIncidents(page.items);
+      setArchiveCursor(page.next_cursor);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "The archive could not load. ClickHouse may be unavailable.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function clearArchiveFilters(): Promise<void> {
+    setArchiveFilters(emptyArchiveFilters);
+    setLoading(true);
+    setError("");
+    try {
+      const page = await loadArchive();
+      setArchivedIncidents(page.items);
+      setArchiveCursor(page.next_cursor);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "The archive could not load. ClickHouse may be unavailable.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function openArchivedIncident(incidentId: string): Promise<void> {
+    setDetailLoading(true);
+    setError("");
+    try {
+      const incident = await request<DashboardIncidentDetail>(`/v1/dashboard/archive/incidents/${encodeURIComponent(incidentId)}`);
+      setSelectedIncident(incident);
+      navigate("archive-detail", incident.incident_id);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "The archived incident could not load.");
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+
+  async function loadMoreArchivedIncidents(): Promise<void> {
+    if (!archiveCursor) return;
+    setLoading(true);
+    setError("");
+    try {
+      const page = await loadArchive(archiveFilters, archiveCursor);
+      setArchivedIncidents((current) => [...current, ...page.items]);
+      setArchiveCursor(page.next_cursor);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "The next archive page could not load.");
     } finally {
       setLoading(false);
     }
@@ -503,8 +650,11 @@ function App() {
     setOverview(undefined);
     setIncidents([]);
     setNextCursor(undefined);
+    setArchivedIncidents([]);
+    setArchiveCursor(undefined);
     setSelectedIncident(undefined);
     setFilters(emptyFilters);
+    setArchiveFilters(emptyArchiveFilters);
     navigate("overview");
     setError("");
   }
@@ -536,13 +686,14 @@ function App() {
       <nav aria-label="Dashboard sections">
         <button className={view === "overview" ? "active" : ""} onClick={() => navigate("overview")}>Overview</button>
         <button className={view === "investigations" || view === "detail" ? "active" : ""} onClick={() => navigate("investigations")}>Investigations</button>
+        {overview.archive.enabled && <button className={view === "archive" || view === "archive-detail" ? "active" : ""} onClick={() => void openArchiveView()}>Archived</button>}
       </nav>
-      <div className="sidebar-footer"><span>API target</span><code>{apiBaseUrl || "localhost:3000"}</code><small>v0.8.2</small></div>
+      <div className="sidebar-footer"><span>API target</span><code>{apiBaseUrl || "localhost:3000"}</code><small>v0.9.0</small></div>
     </aside>
 
     <main className="content">
       <header className="page-header">
-        {view === "overview" ? <div><span className="eyebrow">SYSTEM OVERVIEW</span><h1>Operational coverage</h1><p>Services, environments, and evidence sources visible to this tenant.</p></div> : view === "investigations" ? <div><span className="eyebrow">INVESTIGATION WORKSPACE</span><h1>Incident investigations</h1><p>Filter saved incidents, then inspect the evidence and recommended next checks.</p></div> : <div><span className="eyebrow">INCIDENT DETAIL</span><h1>Incident investigation</h1><p>Review the analysis, recorded evidence, and optional AI second opinion.</p></div>}
+        {view === "overview" ? <div><span className="eyebrow">SYSTEM OVERVIEW</span><h1>Operational coverage</h1><p>Services, environments, and evidence sources visible to this tenant.</p></div> : view === "investigations" ? <div><span className="eyebrow">INVESTIGATION WORKSPACE</span><h1>Incident investigations</h1><p>Filter saved incidents, then inspect the evidence and recommended next checks.</p></div> : view === "archive" ? <div><span className="eyebrow">HISTORICAL EVIDENCE</span><h1>Archived investigations</h1><p>Search read-only incident snapshots retained in ClickHouse.</p></div> : view === "archive-detail" ? <div><span className="eyebrow">ARCHIVED INCIDENT</span><h1>Historical investigation</h1><p>Review the stored analysis and evidence timeline without changing the archive.</p></div> : <div><span className="eyebrow">INCIDENT DETAIL</span><h1>Incident investigation</h1><p>Review the analysis, recorded evidence, and optional AI second opinion.</p></div>}
         <div className="header-actions"><span className="live-status"><i />API connected</span><button className="secondary-button" onClick={refreshDashboard} disabled={loading}>{loading ? "Refreshing…" : "Refresh"}</button><button className="secondary-button" onClick={signOut}>Sign out</button></div>
       </header>
 
@@ -557,6 +708,8 @@ function App() {
         </section>
 
         <ServicesTable services={overview.services} />
+
+        <ArchiveStatus archive={overview.archive} />
 
         <section className="lower-grid">
           <EnvironmentPanel environments={overview.environments} />
@@ -584,7 +737,21 @@ function App() {
         onLoadMore={() => void loadMoreIncidents()}
       />}
 
+      {view === "archive" && <ArchivePanel
+        incidents={archivedIncidents}
+        filters={archiveFilters}
+        tieringEnabled={overview.archive.tiering_enabled}
+        loading={loading || detailLoading}
+        nextCursor={archiveCursor}
+        onFiltersChange={setArchiveFilters}
+        onApply={applyArchiveFilters}
+        onClear={() => void clearArchiveFilters()}
+        onOpen={(incidentId) => void openArchivedIncident(incidentId)}
+        onLoadMore={() => void loadMoreArchivedIncidents()}
+      />}
+
       {view === "detail" && selectedIncident && <IncidentDetail incident={selectedIncident} tab={detailTab} reportLoading={reportLoading} aiLoading={aiLoading} onBack={() => navigate("investigations")} onTabChange={selectDetailTab} onDownload={() => void downloadIncidentReport(selectedIncident.incident_id)} onGenerateAi={() => void generateAiExplanation(selectedIncident.incident_id)} />}
+      {view === "archive-detail" && selectedIncident && <IncidentDetail incident={selectedIncident} tab={detailTab} reportLoading={false} aiLoading={false} onBack={() => void openArchiveView()} onTabChange={selectDetailTab} onDownload={() => undefined} onGenerateAi={() => undefined} />}
     </main>
   </div>;
 }
@@ -619,6 +786,32 @@ function IncidentPanel({ incidents, filters, services, environments, sources, lo
   </section>;
 }
 
+function ArchivePanel({ incidents, filters, tieringEnabled, loading, nextCursor, onFiltersChange, onApply, onClear, onOpen, onLoadMore }: {
+  incidents: DashboardIncident[];
+  filters: ArchiveFilters;
+  tieringEnabled: boolean;
+  loading: boolean;
+  nextCursor?: string;
+  onFiltersChange: (filters: ArchiveFilters) => void;
+  onApply: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  onClear: () => void;
+  onOpen: (incidentId: string) => void;
+  onLoadMore: () => void;
+}) {
+  return <section className="panel data-panel incident-panel archive-panel">
+    <div className="panel-heading"><div><span className="eyebrow">CLICKHOUSE ARCHIVE</span><h2>Historical investigations</h2><p>{tieringEnabled ? "Incidents older than the PostgreSQL hot window." : "Latest ClickHouse snapshots; while pruning is disabled, these may also appear in active investigations."} This view is read-only and does not rerun detection or AI.</p></div><span className="count-badge">{incidents.length}</span></div>
+    <form className="filters archive-filters" onSubmit={(event) => void onApply(event)}>
+      <label>Service<input value={filters.service} onChange={(event) => onFiltersChange({ ...filters, service: event.target.value })} placeholder="All services" /></label>
+      <label>Environment<input value={filters.environment} onChange={(event) => onFiltersChange({ ...filters, environment: event.target.value })} placeholder="All environments" /></label>
+      <label>Leading cause<input value={filters.cause} onChange={(event) => onFiltersChange({ ...filters, cause: event.target.value })} placeholder="All causes" /></label>
+      <label>From<input type="date" value={filters.from} onChange={(event) => onFiltersChange({ ...filters, from: event.target.value })} /></label>
+      <label>To<input type="date" value={filters.to} onChange={(event) => onFiltersChange({ ...filters, to: event.target.value })} /></label>
+      <div className="filter-actions"><button disabled={loading}>{loading ? "Loading…" : "Search archive"}</button><button type="button" className="text-button" onClick={onClear} disabled={loading}>Clear</button></div>
+    </form>
+    {incidents.length === 0 ? <EmptyState text="No archived investigations match these filters." /> : <><div className="table-scroll"><table className="incident-table"><thead><tr><th>Incident</th><th>Service</th><th>Evidence</th><th>Last activity</th><th aria-label="Open archived incident" /></tr></thead><tbody>{incidents.map((incident) => <tr key={incident.incident_id}><td><strong className="truncate" title={incident.incident_id}>{humanize(incident.leading_cause)}</strong><span className="row-subtitle"><i className={`severity-dot ${incident.confidence}`} />{incident.confidence} confidence · archived</span></td><td><strong>{incident.service}</strong><span className="row-subtitle">{incident.environment}</span></td><td>{incident.event_count} events</td><td><time title={formatDate(incident.last_event_at)}>{formatDate(incident.last_event_at)}</time></td><td><button className="row-action" onClick={() => onOpen(incident.incident_id)} disabled={loading}>View</button></td></tr>)}</tbody></table></div>{nextCursor && <div className="load-more"><button className="secondary-button" onClick={onLoadMore} disabled={loading}>{loading ? "Loading…" : "Load 25 more"}</button></div>}</>}
+  </section>;
+}
+
 function IncidentDetail({ incident, tab, reportLoading, aiLoading, onBack, onTabChange, onDownload, onGenerateAi }: { incident: DashboardIncidentDetail; tab: IncidentTab; reportLoading: boolean; aiLoading: boolean; onBack: () => void; onTabChange: (tab: IncidentTab) => void; onDownload: () => void; onGenerateAi: () => void }) {
   const sources = [...new Set(incident.timeline.map((event) => event.source))];
   const terms = evidenceTerms(incident);
@@ -627,7 +820,7 @@ function IncidentDetail({ incident, tab, reportLoading, aiLoading, onBack, onTab
     requestAnimationFrame(() => requestAnimationFrame(() => scrollToEvidence(eventId)));
   };
   const handleTabKey = (event: KeyboardEvent<HTMLDivElement>) => {
-    const tabs: IncidentTab[] = ["analysis", "evidence", "ai"];
+    const tabs: IncidentTab[] = incident.archived && !incident.ai_explanation ? ["analysis", "evidence"] : ["analysis", "evidence", "ai"];
     const current = tabs.indexOf(tab);
     const next = event.key === "ArrowRight" ? tabs[(current + 1) % tabs.length] : event.key === "ArrowLeft" ? tabs[(current + tabs.length - 1) % tabs.length] : event.key === "Home" ? tabs[0] : event.key === "End" ? tabs.at(-1) : undefined;
     if (!next) return;
@@ -636,7 +829,7 @@ function IncidentDetail({ incident, tab, reportLoading, aiLoading, onBack, onTab
     requestAnimationFrame(() => document.getElementById(`incident-tab-${next}`)?.focus());
   };
   return <section className="incident-detail" aria-label={`Incident investigation for ${incident.service}`}>
-    <div className="detail-toolbar"><button className="back-button" onClick={onBack}>← Back to investigations</button><button className="secondary-button report-button" onClick={onDownload} disabled={reportLoading}>{reportLoading ? "Preparing report…" : "Download report"}</button></div>
+    <div className="detail-toolbar"><button className="back-button" onClick={onBack}>← Back to {incident.archived ? "archive" : "investigations"}</button>{incident.archived ? <span className="state-badge archived">Read-only archive</span> : <button className="secondary-button report-button" onClick={onDownload} disabled={reportLoading}>{reportLoading ? "Preparing report…" : "Download report"}</button>}</div>
     <div className="detail-heading">
       <div><span className="eyebrow">INCIDENT INVESTIGATION</span><h2>{incident.service} · {incident.environment}</h2><p><strong>{humanize(incident.leading_cause)}</strong> · {incident.confidence} confidence · {incident.state} incident</p></div>
     </div>
@@ -644,7 +837,7 @@ function IncidentDetail({ incident, tab, reportLoading, aiLoading, onBack, onTab
     <div className="incident-tabs" id="incident-tabs" role="tablist" aria-label="Incident investigation sections" onKeyDown={handleTabKey}>
       <button id="incident-tab-analysis" role="tab" aria-selected={tab === "analysis"} aria-controls="incident-panel-analysis" tabIndex={tab === "analysis" ? 0 : -1} className={tab === "analysis" ? "active" : ""} onClick={() => onTabChange("analysis")}>Analysis</button>
       <button id="incident-tab-evidence" role="tab" aria-selected={tab === "evidence"} aria-controls="incident-panel-evidence" tabIndex={tab === "evidence" ? 0 : -1} className={tab === "evidence" ? "active" : ""} onClick={() => onTabChange("evidence")}>Evidence <span>{incident.event_count}</span></button>
-      <button id="incident-tab-ai" role="tab" aria-selected={tab === "ai"} aria-controls="incident-panel-ai" tabIndex={tab === "ai" ? 0 : -1} className={tab === "ai" ? "active" : ""} onClick={() => onTabChange("ai")}>AI Review{incident.ai_explanation && <i aria-hidden="true" title="Generated" />}</button>
+      {(!incident.archived || incident.ai_explanation) && <button id="incident-tab-ai" role="tab" aria-selected={tab === "ai"} aria-controls="incident-panel-ai" tabIndex={tab === "ai" ? 0 : -1} className={tab === "ai" ? "active" : ""} onClick={() => onTabChange("ai")}>AI Review{incident.ai_explanation && <i aria-hidden="true" title="Generated" />}</button>}
     </div>
     {tab === "analysis" && <div className="incident-tab-panel" id="incident-panel-analysis" role="tabpanel" aria-labelledby="incident-tab-analysis">
       {incident.cross_service && <CrossServiceEvidence context={incident.cross_service} timeline={incident.timeline} onEvidence={openEvidence} />}
@@ -774,6 +967,21 @@ function EnvironmentPanel({ environments }: { environments: DashboardOverview["e
 
 function IntegrationPanel({ integrations }: { integrations: DashboardOverview["integrations"] }) {
   return <section className="panel" id="integrations"><div className="panel-heading"><div><div className="heading-with-help"><h2>Evidence source activity</h2><DotLegend kind="activity" /></div><p>Recent evidence shows delivery activity, not provider health.</p></div><span className="count-badge">{integrations.length}</span></div>{integrations.length === 0 ? <EmptyState text="No evidence sources have delivered events yet." /> : <div className="compact-list">{newestFirst(integrations).map((integration) => { const recent = integration.recent_event_count > 0; return <article key={integration.source}><div className="row-title"><strong><i className={`status-dot ${recent ? "active" : "quiet"}`} />{sourceLabel(integration.source)}</strong><time title={formatDate(integration.last_event_at)}>{formatAge(integration.last_event_at)}</time></div><span>{recent ? `${integration.recent_event_count} events in the last 24h` : "No evidence received in the last 24h"} · {integration.event_count} total</span></article>; })}</div>}</section>;
+}
+
+function ArchiveStatus({ archive }: { archive: DashboardOverview["archive"] }) {
+  const healthy = archive.enabled && archive.queued_records === 0;
+  const title = archive.tiering_enabled ? "Hot/cold evidence storage" : archive.enabled ? "ClickHouse archive enabled" : "PostgreSQL operational storage";
+  const detail = archive.tiering_enabled
+    ? `PostgreSQL keeps ${archive.hot_retention_days} days of active evidence; ClickHouse keeps the long-term archive.`
+    : archive.enabled
+      ? "Evidence is archived to ClickHouse, but automatic PostgreSQL hot-window pruning is not enabled."
+      : "ClickHouse is optional. Active and historical evidence currently remain in PostgreSQL.";
+  return <section className={`archive-status ${archive.enabled ? "enabled" : "disabled"}`} aria-label="Evidence storage status">
+    <div><span className="eyebrow">EVIDENCE STORAGE</span><h2>{title}</h2><p>{detail}</p></div>
+    <div className="archive-queue"><strong>{archive.queued_records}</strong><span>records awaiting archive</span>{archive.retrying_records > 0 && <small>{archive.retrying_records} retrying</small>}{archive.oldest_queued_at && <small>Oldest queued {formatAge(archive.oldest_queued_at)}</small>}</div>
+    <span className={`archive-health ${healthy ? "healthy" : archive.enabled ? "attention" : "inactive"}`}>{healthy ? "Archive caught up" : archive.enabled ? "Delivery pending" : "Archive disabled"}</span>
+  </section>;
 }
 
 function EmptyState({ text }: { text: string }) {
