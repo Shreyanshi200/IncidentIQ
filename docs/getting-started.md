@@ -111,6 +111,10 @@ The dashboard is a separate browser application. It requires its own read-only k
 
 The dashboard works without AI. To add operator-requested, evidence-bounded explanations, configure your own OpenAI API key and model on the API server, then restart it. Follow the [AI explanations guide](ai-explanations.md) for the exact values, data boundary, four-scenario test pack, and verification steps.
 
+## 9. Optional ClickHouse archive
+
+PostgreSQL is sufficient for the default installation. If measured historical evidence volume requires a separate analytical store, follow the [ClickHouse archive guide](clickhouse.md). ClickHouse is not required for local setup, ingestion, automatic incidents, or the dashboard.
+
 ## Production notes
 
 The API needs a PostgreSQL database and must be reachable over HTTPS by remote producers such as GitHub-hosted runners. Use the [production API deployment guide](deployment/api-production.md) for a repeatable Docker, reverse-proxy, backup, and upgrade setup.

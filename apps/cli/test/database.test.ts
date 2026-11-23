@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import type { IncidentFixture } from "@incidentiqhq/event-schema";
-import { applyMigrations, clearTenantData, createApiKey, createDatabase, getIncident, listApiKeys, listEvents, listIncidents, loadFixture, pruneTenantData, revokeApiKey, saveInvestigation } from "../src/database.js";
+import { applyMigrations, archiveStatus, clearTenantData, createApiKey, createDatabase, discardArchiveQueue, getIncident, listApiKeys, listEvents, listIncidents, loadFixture, pruneTenantData, queueArchiveBackfill, revokeApiKey, saveInvestigation } from "../src/database.js";
 import { correlate } from "@incidentiqhq/correlation";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -54,6 +54,33 @@ test("tenant cleanup removes evidence and incidents only from the selected tenan
     assert.equal((await listEvents(database)).some((event) => event.tenant_id === tenantId), false);
     assert.equal((await listIncidents(database)).some((incident) => incident.tenant_id === tenantId), false);
   } finally {
+    await database.destroy();
+  }
+});
+
+test("archive backfill queues existing evidence once and tenant cleanup removes its queue", { skip: !databaseUrl }, async () => {
+  const fixture = JSON.parse(await readFile("demo/fixtures/deployment-regression.json", "utf8")) as IncidentFixture;
+  const tenantId = `archive-${randomUUID()}`;
+  const scopedFixture = {
+    ...fixture,
+    fixture_id: `incident-${tenantId}`,
+    events: fixture.events.map((event) => ({ ...event, event_id: `${event.event_id}-${tenantId}`, tenant_id: tenantId }))
+  };
+  const database = createDatabase(databaseUrl);
+  try {
+    await applyMigrations(database);
+    await loadFixture(database, scopedFixture);
+    await saveInvestigation(database, correlate(scopedFixture));
+    assert.deepEqual(await queueArchiveBackfill(database, tenantId), { events: scopedFixture.events.length, incidents: 1 });
+    const status = await archiveStatus(database, tenantId);
+    assert.equal(status.queued, scopedFixture.events.length + 1);
+    assert.equal(status.retrying, 0);
+    assert.ok(status.oldest_queued_at);
+    assert.deepEqual(await queueArchiveBackfill(database, tenantId), { events: 0, incidents: 1 });
+    assert.equal(await discardArchiveQueue(database, tenantId), scopedFixture.events.length + 1);
+    assert.equal((await archiveStatus(database, tenantId)).queued, 0);
+  } finally {
+    await clearTenantData(database, tenantId);
     await database.destroy();
   }
 });
@@ -112,7 +139,7 @@ test("retention dry-runs before deleting expired incidents and unretained events
     await saveInvestigation(database, correlate(retained));
 
     const cutoff = "2026-11-01T00:00:00.000Z";
-    assert.deepEqual(await pruneTenantData(database, tenantId, cutoff), {
+    assert.deepEqual(await pruneTenantData(database, tenantId, cutoff, false, false), {
       tenant_id: tenantId,
       cutoff,
       incidents: 1,
@@ -122,7 +149,7 @@ test("retention dry-runs before deleting expired incidents and unretained events
     assert.equal((await listIncidents(database, tenantId)).length, 2);
     assert.equal((await listEvents(database)).filter((event) => event.tenant_id === tenantId).length, expired.events.length + retained.events.length);
 
-    assert.deepEqual(await pruneTenantData(database, tenantId, cutoff, true), {
+    assert.deepEqual(await pruneTenantData(database, tenantId, cutoff, true, false), {
       tenant_id: tenantId,
       cutoff,
       incidents: 1,
@@ -131,6 +158,32 @@ test("retention dry-runs before deleting expired incidents and unretained events
     });
     assert.deepEqual((await listIncidents(database, tenantId)).map((incident) => incident.incident_id), [retained.fixture_id]);
     assert.deepEqual((await listEvents(database)).filter((event) => event.tenant_id === tenantId).map((event) => event.event_id).sort(), retained.events.map((event) => event.event_id).sort());
+  } finally {
+    await clearTenantData(database, tenantId);
+    await database.destroy();
+  }
+});
+
+test("tiered retention deletes only records with confirmed ClickHouse delivery", { skip: !databaseUrl }, async () => {
+  const fixture = JSON.parse(await readFile("demo/fixtures/deployment-regression.json", "utf8")) as IncidentFixture;
+  const tenantId = `tiering-${randomUUID()}`;
+  const archived = {
+    ...fixture,
+    fixture_id: `archived-${tenantId}`,
+    events: fixture.events.map((event) => ({ ...event, event_id: `${event.event_id}-${tenantId}`, tenant_id: tenantId }))
+  };
+  const database = createDatabase(databaseUrl);
+  const cutoff = "2026-11-01T00:00:00.000Z";
+  try {
+    await applyMigrations(database);
+    await loadFixture(database, archived);
+    await saveInvestigation(database, correlate(archived));
+    assert.deepEqual(await pruneTenantData(database, tenantId, cutoff, false, true), { tenant_id: tenantId, cutoff, incidents: 0, events: 0, deleted: false });
+
+    const confirmedAt = "2026-10-24T00:00:00.000Z";
+    await database.updateTable("source_events").set({ clickhouse_archived_at: confirmedAt }).where("tenant_id", "=", tenantId).execute();
+    await database.updateTable("incidents").set({ clickhouse_archived_at: confirmedAt }).where("tenant_id", "=", tenantId).execute();
+    assert.deepEqual(await pruneTenantData(database, tenantId, cutoff, true, true), { tenant_id: tenantId, cutoff, incidents: 1, events: archived.events.length, deleted: true });
   } finally {
     await clearTenantData(database, tenantId);
     await database.destroy();

@@ -3,14 +3,14 @@
   "private": true,
   "license": "MIT",
   "type": "module",
-  "version": "0.8.2",
+  "version": "0.9.0",
   "packageManager": "pnpm@11.6.0",
   "engines": {
     "node": ">=24"
   },
   "scripts": {
     "build": "pnpm --filter @incidentiqhq/event-schema build && pnpm --filter @incidentiqhq/correlation build && pnpm --filter @incidentiqhq/api build && pnpm --filter @incidentiqhq/dashboard build && pnpm --filter @incidentiqhq/node-sdk build && pnpm --filter @incidentiqhq/github-action build && pnpm --filter @incidentiqhq/kubernetes-collector build && pnpm --filter @incidentiqhq/demo-service build && pnpm --filter @incidentiqhq/cli build",
-    "test": "pnpm build && node --env-file-if-exists=.env --test packages/event-schema/dist/test/*.test.js packages/correlation/dist/test/*.test.js packages/node-sdk/dist/test/*.test.js integrations/github-action/build/test/*.test.js integrations/kubernetes-collector/build/test/*.test.js apps/api/dist/test/*.test.js apps/demo-service/dist/test/*.test.js apps/cli/dist/test/*.test.js",
+    "test": "pnpm build && CLICKHOUSE_URL= node --env-file-if-exists=.env --test packages/event-schema/dist/test/*.test.js packages/correlation/dist/test/*.test.js packages/node-sdk/dist/test/*.test.js integrations/github-action/build/test/*.test.js integrations/kubernetes-collector/build/test/*.test.js apps/api/dist/test/*.test.js apps/demo-service/dist/test/*.test.js apps/cli/dist/test/*.test.js",
     "verify:npm-packages": "node scripts/verify-npm-packages.mjs",
     "incidentiq": "node apps/cli/dist/src/index.js",
     "incidentiq:dev": "pnpm --filter @incidentiqhq/cli... build && node apps/cli/dist/src/index.js",

@@ -17,6 +17,7 @@ flowchart LR
     API[NestJS API<br/>authentication · validation · redaction]
     ENGINE[Incident engine<br/>grouping · correlation · ranking]
     DB[(PostgreSQL<br/>source events · incidents · key hashes)]
+    CH[(ClickHouse<br/>optional historical archive)]
     DASH[React dashboard<br/>overview · investigations · PDF reports]
     CLI[CLI<br/>migrations · keys · inspection · fixtures]
   end
@@ -29,6 +30,8 @@ flowchart LR
   AM -->|firing and resolved alerts| API
   API --> ENGINE
   ENGINE -->|one transaction| DB
+  DB -.->|durable outbox · asynchronous| CH
+  CH -->|tenant-scoped archived investigations| API
   DASH -->|session-cookie request| API
   API -->|tenant-scoped data| DASH
   API <-->|one redacted incident<br/>structured cited output| AI
@@ -47,12 +50,14 @@ flowchart LR
 7. An operator uses a read key once to create a tenant-scoped dashboard session. The dashboard loads the overview, incident list, detail, timeline, and PDF report through the API.
 8. When explicitly requested and configured, the API sends only that incident's redacted stored evidence to OpenAI. It accepts a structured response only when every claim and check cites event IDs from the incident, then caches the result until new evidence replaces the investigation.
 9. The CLI is an operator tool for migrations, key creation, evidence inspection, fixtures, and saved-incident workflows. Database operations connect directly to PostgreSQL; `fixture ingest` deliberately uses the authenticated API to exercise the production ingestion path.
+10. When ClickHouse is configured, the same PostgreSQL transaction queues each accepted event and updated incident snapshot. A background worker archives redacted records asynchronously, records successful delivery, and retries failures without blocking producer traffic.
+11. When a PostgreSQL hot-retention window is configured, a periodic tiering pass deletes only archive-confirmed rows older than the cutoff. Recent operational evidence remains in PostgreSQL; complete long-term evidence remains in ClickHouse.
 
 ## Component responsibilities
 
 | Component | Location | Responsibility |
 | --- | --- | --- |
-| API | `apps/api` | Ingestion, Alertmanager webhook, authentication, validation, redaction, automatic incidents, optional AI explanation validation, dashboard endpoints, and PDF generation |
+| API | `apps/api` | Ingestion, Alertmanager webhook, authentication, validation, redaction, automatic incidents, active and archived dashboard endpoints, optional AI explanation validation, and PDF generation |
 | Dashboard | `apps/dashboard` | Secure Overview and Investigations interface for one read-key tenant |
 | CLI | `apps/cli` | Database initialization, key creation, fixture workflows, event listing, correlation, and incident inspection |
 | Event schema | `packages/event-schema` | Shared TypeScript event contract and runtime validation |
@@ -61,6 +66,7 @@ flowchart LR
 | GitHub Action | `integrations/github-action` | Fail-open deployment context from a GitHub workflow |
 | Kubernetes collector | `integrations/kubernetes-collector` | Namespace-scoped, read-only watches for curated Pod, Event, Deployment, and Job failures |
 | PostgreSQL | `infrastructure/postgres` | Durable events, incidents, event links, migrations, and API-key hashes; application queries use Kysely |
+| ClickHouse | Optional operator-provided service | Historical redacted events and incident snapshots delivered through the PostgreSQL outbox |
 
 ## Integration contract
 
@@ -84,24 +90,26 @@ See the [event data guide](event-data.md) for field ownership and the source-spe
 - `INCIDENTIQ_SESSION_SECRET` signs browser sessions and is unrelated to either API key.
 - `OPENAI_API_KEY` is optional, remains server-side, and is sent only to OpenAI. Enabling it sends the selected incident's redacted operational evidence to that external processor.
 - PostgreSQL and the API container port should remain private behind an HTTPS reverse proxy.
+- Optional ClickHouse credentials remain server-side; ClickHouse receives redacted operational records, never API-key hashes.
 - Production responses include request IDs and defensive headers; JSON request logs exclude headers and bodies.
 
 ## Infrastructure ownership
 
 The current product is self-hosted. The operator provides and owns:
 
-- PostgreSQL, its backups, retention, network policy, and TLS settings;
+- PostgreSQL and, when enabled, ClickHouse, including their backups, retention, network policy, and TLS settings;
 - the API host or container platform and its HTTPS endpoint;
 - static hosting for the dashboard on the same origin as `/v1`;
 - GitHub, Kubernetes, Prometheus, Alertmanager, and application infrastructure; and
 - secret storage for ingestion keys, read keys, database credentials, and the session secret; and
 - an OpenAI account, API key, model choice, usage budget, and data-processing approval when optional AI explanations are enabled.
 
-IncidentIQ supplies the API and collector images, npm SDK, GitHub Action, database migrations, integration configuration, dashboard build, and operating guides. Kafka and ClickHouse are planned scale options, not requirements for the current release.
+IncidentIQ supplies the API and collector images, npm SDK, GitHub Action, database migrations, integration configuration, dashboard build, and operating guides. ClickHouse is an optional scale choice; Kafka remains planned and neither is required for PostgreSQL-only installations.
 
 ## Current boundaries
 
 - One API process and PostgreSQL are the supported production shape.
+- ClickHouse archival and automatic hot/cold pruning are asynchronous and optional. The dashboard exposes archive queue/tiering status, active investigations read PostgreSQL, and a separate read-only tenant-scoped archive view reads latest historical incident snapshots from ClickHouse. It deliberately does not merge both stores into one ambiguous result list.
 - Session and AI rate limits are process-local and reset when that API process restarts.
 - The dashboard is single-operator and has no acknowledgement, assignment, or resolution workflow.
 - Automatic incident records remain local to one tenant, service, and environment. The investigation layer builds a tenant-scoped cross-service view only from shared traces or declared dependency failures within the configured evidence window; unrelated simultaneous failures remain separate.

@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, UnauthorizedException } from "@nestjs/common";
 import { type NormalizedEvent, validateEvent } from "@incidentiqhq/event-schema";
 import { type ApiKeyRecord, ApiKeysService } from "./api-keys.service.js";
+import { ClickHouseArchiveService } from "./clickhouse-archive.service.js";
 import { DatabaseService } from "./database.js";
 import { IncidentDetectionService } from "./incident-detection.service.js";
 
@@ -22,7 +23,8 @@ export class EventsService {
   constructor(
     private readonly database: DatabaseService,
     private readonly apiKeys: ApiKeysService,
-    private readonly incidents: IncidentDetectionService
+    private readonly incidents: IncidentDetectionService,
+    private readonly archive: ClickHouseArchiveService
   ) {}
 
   async authenticate(authorization: string | undefined): Promise<ApiKeyRecord> {
@@ -62,10 +64,16 @@ export class EventsService {
           .onConflict((conflict) => conflict.column("event_id").doNothing())
           .returning("event_id")
           .executeTakeFirst();
-        if (saved) await this.incidents.detect(event, transaction);
+        if (saved) {
+          const incidentId = await this.incidents.detect(event, transaction);
+          await this.archive.enqueue(transaction, event.event_id, event.tenant_id, incidentId);
+        }
         return Boolean(saved);
       });
-      if (inserted) accepted += 1;
+      if (inserted) {
+        accepted += 1;
+        this.archive.wake();
+      }
     }
     return { accepted, duplicates: events.length - accepted };
   }

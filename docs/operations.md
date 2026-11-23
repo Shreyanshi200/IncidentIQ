@@ -100,4 +100,8 @@ Production mode additionally requires a stable `INCIDENTIQ_SESSION_SECRET`. The 
 
 Production mode trusts exactly one reverse-proxy hop when determining the client address used for dashboard session limits. This matches the supported Nginx-to-API deployment. Keep the API loopback-bound as shown in the production guide; do not expose it directly or add another proxy layer without updating this topology.
 
+When optional ClickHouse archival is enabled, check the dashboard **Evidence storage** panel or run `pnpm incidentiq archive status` before PostgreSQL retention. Pruning automatically preserves records still in the archive outbox and, when ClickHouse is configured, manual pruning counts only rows with confirmed archive delivery. A growing or retrying queue requires fixing ClickHouse delivery rather than widening PostgreSQL deletion.
+
+For automatic hot/cold tiering, set `INCIDENTIQ_POSTGRES_HOT_RETENTION_DAYS` to the measured operational window required by incident correlation and active dashboard use. The API periodically removes only confirmed events and incident snapshots older than that cutoff. Start conservatively—for example, 30 days—observe investigation needs and archive delivery, then shorten it only with evidence. Leave the value unset when PostgreSQL-only retention or operator-scheduled pruning is preferred.
+
 Session and AI rate counters are in memory because the supported deployment uses one API process. They reset after restart and are not a distributed quota or billing system. A future multi-instance deployment must move these counters to shared infrastructure.

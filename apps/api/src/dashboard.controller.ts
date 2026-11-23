@@ -2,6 +2,7 @@ import { BadRequestException, Controller, Delete, Get, Headers, Ip, NotFoundExce
 import { DashboardSessionService } from "./dashboard-session.service.js";
 import { type DashboardIncidentCursor, type DashboardIncidentDetail, type DashboardIncidentFilters, type DashboardIncidentPage, type DashboardOverview, DashboardService } from "./dashboard.service.js";
 import type { AiExplanation } from "./ai-explanation.service.js";
+import type { ArchivedIncidentFilters } from "./clickhouse-archive.service.js";
 
 interface HeaderResponse {
   setHeader(name: string, value: string): void;
@@ -40,6 +41,13 @@ function incidentCursor(value: unknown): DashboardIncidentCursor | undefined {
   } catch {
     throw new BadRequestException("Invalid incident cursor");
   }
+}
+
+function timestampFilter(value: unknown, name: string): string | undefined {
+  const timestamp = filter(value);
+  if (!timestamp) return undefined;
+  if (Number.isNaN(Date.parse(timestamp))) throw new BadRequestException(`${name} must be an ISO timestamp`);
+  return new Date(timestamp).toISOString();
 }
 
 @Controller("v1/dashboard")
@@ -91,6 +99,32 @@ export class DashboardController {
   async incident(@Headers("cookie") cookie: string | undefined, @Param("incidentId") incidentId: string): Promise<DashboardIncidentDetail> {
     const incident = await this.dashboard.incident(cookie, incidentId);
     if (!incident) throw new NotFoundException("Incident not found");
+    return incident;
+  }
+
+  @Get("archive/incidents")
+  archivedIncidents(
+    @Headers("cookie") cookie: string | undefined,
+    @Query("service") service: unknown,
+    @Query("environment") environment: unknown,
+    @Query("cause") cause: unknown,
+    @Query("from") from: unknown,
+    @Query("to") to: unknown,
+    @Query("cursor") cursor: unknown
+  ): Promise<DashboardIncidentPage> {
+    return this.dashboard.archivedIncidents(cookie, {
+      service: filter(service),
+      environment: filter(environment),
+      cause: filter(cause),
+      from: timestampFilter(from, "from"),
+      to: timestampFilter(to, "to")
+    } satisfies ArchivedIncidentFilters, incidentCursor(cursor));
+  }
+
+  @Get("archive/incidents/:incidentId")
+  async archivedIncident(@Headers("cookie") cookie: string | undefined, @Param("incidentId") incidentId: string): Promise<DashboardIncidentDetail> {
+    const incident = await this.dashboard.archivedIncident(cookie, incidentId);
+    if (!incident) throw new NotFoundException("Archived incident not found");
     return incident;
   }
 
